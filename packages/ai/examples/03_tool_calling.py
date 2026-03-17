@@ -7,7 +7,7 @@
 - 完成完整的工具调用循环
 
 运行：
-    uv run python examples/tool_calling.py
+    uv run python examples/03_tool_calling.py
 """
 
 from __future__ import annotations
@@ -18,12 +18,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from ai.providers.anthropic import AnthropicProvider
+from ai.providers import KimiProvider
 from ai.types import (
     Context,
-    Model,
-    ModelCapabilities,
-    ModelCost,
     TextContent,
     Tool,
     ToolResultMessage,
@@ -89,16 +86,8 @@ async def main():
         ),
     ]
 
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=4096,
-    )
+    provider = KimiProvider()
+    model = provider.get_model()
 
     # 构建带工具的上下文
     context = Context(
@@ -107,8 +96,6 @@ async def main():
         ],
         tools=tools,
     )
-
-    provider = AnthropicProvider()
 
     print(f"\n用户: {context.messages[0].content}")
     print("\n等待助手响应...")

@@ -7,37 +7,27 @@
 - 系统提示对对话的影响
 
 运行：
-    uv run python examples/system_prompt.py
+    uv run python examples/05_system_prompt.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from ai.providers.anthropic import AnthropicProvider
-from ai.types import Context, Model, ModelCapabilities, ModelCost, UserMessage
+from ai.providers import KimiProvider
+from ai.types import Context, UserMessage
 
 
 async def chat_with_persona(system_prompt: str, user_message: str, persona_name: str) -> str:
     """使用指定角色进行对话"""
-
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=2048,
-    )
+    provider = KimiProvider()
+    model = provider.get_model()
 
     context = Context(
         system_prompt=system_prompt,
         messages=[UserMessage(text=user_message)],
     )
 
-    provider = AnthropicProvider()
     response = await provider.complete(model=model, context=context)
 
     # 提取文本回复

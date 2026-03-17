@@ -7,7 +7,7 @@
 - 并行工具调用
 
 运行：
-    uv run python examples/advanced_tools.py
+    uv run python examples/10_advanced_tools.py
 """
 
 from __future__ import annotations
@@ -19,13 +19,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ai.providers.anthropic import AnthropicProvider
+from ai.providers import KimiProvider
 from ai.types import (
     AssistantMessage,
     Context,
-    Model,
-    ModelCapabilities,
-    ModelCost,
     TextContent,
     Tool,
     ToolResultMessage,
@@ -138,8 +135,8 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> str:
 
 
 async def run_conversation(
-    provider: AnthropicProvider,
-    model: Model,
+    provider: KimiProvider,
+    model: Any,
     messages: list,
     max_iterations: int = 5,
 ) -> AssistantMessage:
@@ -188,18 +185,8 @@ async def main():
     print("示例 10: 复杂工具链调用")
     print("=" * 60)
 
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=4096,
-    )
-
-    provider = AnthropicProvider()
+    provider = KimiProvider()
+    model = provider.get_model()
 
     # 测试用例 1: 搜索 + 天气组合
     print("\n" + "=" * 60)

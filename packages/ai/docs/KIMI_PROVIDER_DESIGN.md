@@ -556,8 +556,8 @@ def _optimize_cache_injection(self, messages: list[dict]) -> list[dict]:
 ## 实现状态
 
 - [x] 设计文档
-- [ ] KimiProvider 类实现
+- [x] KimiProvider 类实现 (`packages/ai/src/ai/providers/kimi.py`)
 - [ ] 单元测试
 - [ ] 集成测试
-- [ ] 使用示例
+- [x] 使用示例 (`packages/ai/examples/kimi_basic.py`)
 - [ ] API 文档

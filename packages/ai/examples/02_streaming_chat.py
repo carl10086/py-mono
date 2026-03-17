@@ -7,15 +7,15 @@
 - 处理不同类型的流事件
 
 运行：
-    uv run python examples/streaming_chat.py
+    uv run python examples/02_streaming_chat.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from ai.providers.anthropic import AnthropicProvider
-from ai.types import Context, Model, ModelCapabilities, ModelCost, UserMessage
+from ai.providers import KimiProvider
+from ai.types import Context, UserMessage
 
 
 async def main():
@@ -23,24 +23,14 @@ async def main():
     print("示例 02: 流式生成")
     print("=" * 60)
 
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=32768,
-    )
+    provider = KimiProvider()
+    model = provider.get_model()
 
     context = Context(
         messages=[
             UserMessage(text="请用中文写一段 200 字的自我介绍，描述你的能力和特点。"),
         ],
     )
-
-    provider = AnthropicProvider()
 
     print(f"\n用户: {context.messages[0].content}")
     print("\n助手: ", end="", flush=True)
