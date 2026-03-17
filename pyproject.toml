@@ -1,0 +1,26 @@
+[project]
+name = "py-mono"
+version = "0.1.0"
+description = "Py-Mono: AI Agent Architecture"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = [
+    "packages/ai",
+]
+
+[tool.uv]
+default-groups = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "N", "UP", "B", "C4", "SIM"]
+ignore = []
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
