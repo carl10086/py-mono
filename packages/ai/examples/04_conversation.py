@@ -7,15 +7,15 @@
 - 实现交互式对话循环
 
 运行：
-    uv run python examples/conversation.py
+    uv run python examples/04_conversation.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from ai.providers.anthropic import AnthropicProvider
-from ai.types import AssistantMessage, Context, Model, ModelCapabilities, ModelCost, UserMessage
+from ai.providers import KimiProvider
+from ai.types import AssistantMessage, Context, UserMessage
 
 
 async def main():
@@ -23,18 +23,8 @@ async def main():
     print("示例 04: 多轮对话")
     print("=" * 60)
 
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=4096,
-    )
-
-    provider = AnthropicProvider()
+    provider = KimiProvider()
+    model = provider.get_model()
 
     # 对话历史
     messages: list[UserMessage | AssistantMessage] = []

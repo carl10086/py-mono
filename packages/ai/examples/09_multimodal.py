@@ -8,10 +8,10 @@
 
 运行：
     # 需要准备一张图片
-    uv run python examples/multimodal.py /path/to/image.png
+    uv run python examples/09_multimodal.py /path/to/image.png
 
     # 或使用示例图片
-    uv run python examples/multimodal.py
+    uv run python examples/09_multimodal.py
 """
 
 from __future__ import annotations
@@ -20,13 +20,10 @@ import asyncio
 import base64
 from pathlib import Path
 
-from ai.providers.anthropic import AnthropicProvider
+from ai.providers import KimiProvider
 from ai.types import (
     Context,
     ImageContent,
-    Model,
-    ModelCapabilities,
-    ModelCost,
     TextContent,
     UserMessage,
 )
@@ -85,22 +82,12 @@ async def main():
         print("（你可以准备一张图片放到当前目录，命名为 example_image.png）")
         user_content = "请描述一张美丽的风景图片。"
 
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text", "image"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=4096,
-    )
+    provider = KimiProvider()
+    model = provider.get_model()
 
     context = Context(
         messages=[UserMessage(content=user_content)],
     )
-
-    provider = AnthropicProvider()
 
     print("\n发送请求...")
 
@@ -124,7 +111,7 @@ async def main():
     print("多模态演示完成")
     print("=" * 60)
     print("\n提示:")
-    print("- Claude 3.5 Sonnet 支持图像输入")
+    print("- Kimi K2 支持图像输入")
     print("- 图片需要转为 base64 编码")
     print("- 大图片会消耗较多 token")
 

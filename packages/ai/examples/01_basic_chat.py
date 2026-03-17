@@ -1,20 +1,19 @@
 """
 示例 01: 基础对话
 
-SDK 自动从环境变量读取配置：
-- API_KEY 或 ANTHROPIC_API_KEY: API 密钥
-- BASE_URL 或 ANTHROPIC_BASE_URL: 自定义 API 地址（可选）
+使用 KimiProvider 自动从环境变量读取配置：
+- KIMI_API_KEY 或 API_KEY: API 密钥
 
 运行：
-    uv run python examples/basic_chat.py
+    uv run python examples/01_basic_chat.py
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from ai.providers.anthropic import AnthropicProvider
-from ai.types import Context, Model, ModelCapabilities, ModelCost, UserMessage
+from ai.providers import KimiProvider
+from ai.types import Context, UserMessage
 
 
 async def main():
@@ -22,18 +21,9 @@ async def main():
     print("示例 01: 基础对话")
     print("=" * 60)
 
-    # 创建模型配置
-    # base_url 不传，SDK 自动使用环境变量或 Anthropic 官方地址
-    model = Model(
-        id="claude-3-5-sonnet-20241022",
-        name="Claude 3.5 Sonnet",
-        api="anthropic-messages",
-        provider="anthropic",
-        capabilities=ModelCapabilities(input=["text"]),
-        cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=262144,
-        max_tokens=32768,
-    )
+    # 创建 provider（自动从环境变量读取配置）
+    provider = KimiProvider()
+    model = provider.get_model()
 
     print(f"\n模型: {model.name} ({model.id})")
     print(f"API: {model.api}")
@@ -46,8 +36,6 @@ async def main():
     )
     print(f"\n用户: {context.messages[0].content}")
 
-    # 创建 provider 并调用
-    provider = AnthropicProvider()
     print("\n发送请求...")
 
     try:
