@@ -31,8 +31,8 @@ async def main():
         provider="anthropic",
         capabilities=ModelCapabilities(input=["text"]),
         cost=ModelCost(input=0, output=0, cache_read=0, cache_write=0),
-        context_window=128000,
-        max_tokens=8192,
+        context_window=262144,
+        max_tokens=32768,
     )
 
     print(f"\n模型: {model.name} ({model.id})")
