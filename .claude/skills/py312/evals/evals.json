@@ -1,0 +1,33 @@
+{
+  "skill_name": "py312",
+  "evals": [
+    {
+      "id": 1,
+      "name": "函数长度控制",
+      "prompt": "编写一个处理用户注册流程的 Python 函数，包含验证邮箱、检查用户名是否存在、创建用户记录、发送欢迎邮件等步骤。要求代码符合 Python 3.12+ 严格类型检查，使用中文注释。",
+      "expected_output": "函数被拆分为多个小函数（每个不超过30行），包含完整类型注解，使用中文文档字符串和注释",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "类型严格检查",
+      "prompt": "审查以下代码并提供修正版本，确保通过 pyright 严格模式检查：\n\ndef process_data(data):\n    result = []\n    for item in data:\n        if item.get('active'):\n            result.append(item['name'])\n    return result\n",
+      "expected_output": "添加完整类型注解（包括参数和返回值），使用具体类型替代 Any，使用 TypedDict 或 dataclass 定义数据结构",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "错误处理与注释",
+      "prompt": "编写一个读取配置文件的 Python 模块，要求：1）使用 pathlib 操作文件；2）使用具体的异常类型；3）所有文档字符串和复杂逻辑注释使用中文；4）函数简短且职责单一。",
+      "expected_output": "使用 Path 对象进行文件操作，捕获 FileNotFoundError/PermissionError/JSONDecodeError 等具体异常，中文注释说明为什么使用某些设计决策",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "代码质量检查",
+      "prompt": "我编写了一些 Python 代码，请帮我确保符合项目规范：检查函数长度不超过30行，运行 ruff check . 和 pyright . 检查，并解释 poe typecheck 和 pyright 的区别。",
+      "expected_output": "强调修改后必须运行 pyright . 进行严格类型检查，解释 poe typecheck 只是调用 pyright 的包装，推荐使用直接的 pyright 命令",
+      "files": []
+    }
+  ]
+}

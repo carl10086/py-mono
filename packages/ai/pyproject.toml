@@ -3,9 +3,14 @@ name = "pyai"
 version = "0.1.0"
 description = "AI core module - LLM provider abstraction"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 keywords = ["ai", "llm", "agent"]
+dependencies = [
+    "pydantic>=2.0.0",
+    "anthropic>=0.40.0",
+    "tiktoken>=0.8.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -16,11 +21,27 @@ packages = ["src/ai"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "N", "UP", "B", "C4", "SIM"]
 
 [tool.pyright]
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 typeCheckingMode = "strict"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "poethepoet>=0.32.0",
+    "pyright>=1.1.390",
+    "ruff>=0.9.0",
+]
+
+[tool.poe.tasks]
+typecheck = "pyright src/ai"
+lint = "ruff check src/ai"
+format = "ruff format src/ai"
+test = "pytest tests/ -v"
+check = ["lint", "typecheck", "test"]
