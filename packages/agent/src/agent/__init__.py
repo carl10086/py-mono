@@ -17,6 +17,10 @@ from agent.agent_loop import run_agent_loop, run_agent_loop_continue
 
 # 类型定义
 from agent.types import (
+    # Hook 类型
+    AfterToolCallContext,
+    AfterToolCallHook,
+    AfterToolCallResult,
     # Agent 类型
     AgentContext,
     AgentEvent,
@@ -27,10 +31,6 @@ from agent.types import (
     AgentToolCall,
     AgentToolResult,
     AgentToolUpdateCallback,
-    # Hook 类型
-    AfterToolCallContext,
-    AfterToolCallHook,
-    AfterToolCallResult,
     BeforeToolCallContext,
     BeforeToolCallHook,
     BeforeToolCallResult,
