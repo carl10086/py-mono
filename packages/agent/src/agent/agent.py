@@ -44,6 +44,7 @@ Agent 类 - Agent 运行时管理
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 from ai.types import (
@@ -375,8 +376,8 @@ class Agent:
         self._follow_up_queue: list[AgentMessage] = []
 
         # 运行状态
-        self._running_prompt: Any = None
-        self._resolve_running_prompt: Callable[[], None] | None = None
+        self._idle_event = asyncio.Event()
+        self._idle_event.set()  # 初始状态为空闲
 
     # -------------------------------------------------------------------------
     # 属性访问
@@ -795,8 +796,7 @@ class Agent:
             >>> await agent.wait_for_idle()  # 确保完成
             >>> print(f"对话历史: {len(agent.state.messages)} 条")
         """
-        if self._running_prompt:
-            await self._running_prompt
+        await self._idle_event.wait()
 
     def reset(self) -> None:
         """重置 Agent 状态
@@ -956,9 +956,8 @@ class Agent:
         if not model:
             raise RuntimeError("No model configured")
 
-        # 创建运行 Promise
-        future: Any = None
-        self._running_prompt = future
+        # 标记为忙碌状态
+        self._idle_event.clear()
 
         self._state.is_streaming = True
         self._state.stream_message = None
@@ -1026,10 +1025,7 @@ class Agent:
             self._state.stream_message = None
             self._state.pending_tool_calls = set()
             self._abort_controller = None
-            if self._resolve_running_prompt:
-                self._resolve_running_prompt()
-            self._running_prompt = None
-            self._resolve_running_prompt = None
+            self._idle_event.set()  # 标记为空闲状态
 
     def _process_loop_event(self, event: AgentEvent) -> None:
         """处理 Loop 事件并更新状态（内部方法）
