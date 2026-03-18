@@ -34,7 +34,7 @@ async def main():
     print("=" * 60)
 
     # 获取模型和 provider（启用 thinking 模式）
-    provider = KimiProvider().with_thinking("xhigh")
+    provider = KimiProvider()
     model = provider.get_model()
 
     # 创建 stream_fn，用于调用 LLM
@@ -54,7 +54,7 @@ async def main():
     print(f"系统提示: {agent.state.system_prompt}")
 
     # 发送提示
-    prompt_text = "你好，请用一句话介绍自己, 200字左右"
+    prompt_text = "你好，请用一句话介绍自己"
     print(f"\n用户: {prompt_text}\n")
 
     try:

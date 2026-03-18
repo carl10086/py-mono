@@ -17,6 +17,9 @@ from agent.agent_loop import run_agent_loop, run_agent_loop_continue
 
 # 类型定义
 from agent.types import (
+    # 自定义消息
+    ConvertToLlm,
+    CustomMessage,
     # Hook 类型
     AfterToolCallContext,
     AfterToolCallHook,
@@ -40,6 +43,9 @@ from agent.types import (
     ToolExecutionMode,
 )
 
+# 转换器
+from agent.converter import strict_convert_to_llm
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -59,6 +65,9 @@ __all__ = [
     "AgentState",
     "AgentEvent",
     "AgentLoopConfig",
+    # 自定义消息
+    "CustomMessage",
+    "ConvertToLlm",
     # Hook 类型
     "BeforeToolCallContext",
     "BeforeToolCallResult",
@@ -70,4 +79,6 @@ __all__ = [
     "StreamFn",
     "ThinkingLevel",
     "ToolExecutionMode",
+    # 转换器
+    "strict_convert_to_llm",
 ]
