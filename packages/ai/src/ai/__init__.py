@@ -19,6 +19,9 @@ from ai.registry import (
     unregister_provider,
 )
 
+# 工具类
+from ai.utils import StreamWatcher
+
 # 流式事件
 from ai.stream import (
     # 事件类型
@@ -160,4 +163,6 @@ __all__ = [
     "list_providers",
     "unregister_provider",
     "clear_providers",
+    # 工具类
+    "StreamWatcher",
 ]

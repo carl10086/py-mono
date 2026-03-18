@@ -3,8 +3,8 @@
 
 学习目标：
 - 启用思考/推理模式
+- 使用 StreamWatcher 观察推理过程
 - 接收 ThinkingContent
-- 观察推理过程
 
 运行：
     uv run python examples/08_thinking_mode.py
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 
+from ai import StreamWatcher
 from ai.providers import KimiProvider
 from ai.types import Context, UserMessage
 
@@ -52,41 +53,15 @@ A 管单独注满需要 6 小时，B 管单独注满需要 4 小时。
     try:
         stream = provider_thinking.stream(model=model, context=context)
 
-        thinking_started = False
-        answer_started = False
+        # 使用 StreamWatcher，但自定义 thinking_end 来打印分隔线
+        message = await StreamWatcher(
+            on_thinking_end=lambda: print(
+                "\n✅ 思考结束\n\n" + "=" * 60 + "\n" + "最终答案:\n" + "=" * 60
+            ),
+            on_done=lambda _: None,  # 覆盖默认的 done 打印
+        ).watch(stream)
 
-        async for event in stream:
-            if event.type == "thinking_start":
-                thinking_started = True
-                print("\n🧠 开始思考...")
-
-            elif event.type == "thinking_delta":
-                if not thinking_started:
-                    thinking_started = True
-                    print("\n🧠 思考内容:")
-                print(event.delta, end="", flush=True)
-
-            elif event.type == "thinking_end":
-                print("\n\n✅ 思考结束")
-                print("\n" + "=" * 60)
-                print("最终答案:")
-                print("=" * 60)
-
-            elif event.type == "text_start":
-                if not answer_started:
-                    answer_started = True
-                    print()
-
-            elif event.type == "text_delta":
-                print(event.delta, end="", flush=True)
-
-            elif event.type == "done":
-                print("\n")
-
-        # 获取完整结果
-        message = await stream.result()
-
-        print("=" * 60)
+        print("\n\n" + "=" * 60)
         print("消息内容分析:")
         print("=" * 60)
 

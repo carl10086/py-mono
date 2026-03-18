@@ -4,10 +4,14 @@ version = "0.1.0"
 description = "Py-Mono: AI Agent Architecture"
 readme = "README.md"
 requires-python = ">=3.14"
+dependencies = [
+    "asyncio>=4.0.0",
+]
 
 [tool.uv.workspace]
 members = [
     "packages/ai",
+    "packages/agent",
 ]
 
 [tool.uv]

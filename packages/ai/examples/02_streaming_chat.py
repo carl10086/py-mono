@@ -2,9 +2,8 @@
 示例 02: 流式生成
 
 学习目标：
-- 理解流式事件协议 (AssistantMessageEvent)
+- 使用 StreamWatcher 简化流式事件处理
 - 实时显示生成内容
-- 处理不同类型的流事件
 
 运行：
     uv run python examples/02_streaming_chat.py
@@ -14,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 
+from ai import StreamWatcher
 from ai.providers import KimiProvider
 from ai.types import Context, UserMessage
 
@@ -38,26 +38,8 @@ async def main():
     try:
         stream = provider.stream(model=model, context=context)
 
-        # 流式消费事件
-        async for event in stream:
-            if event.type == "text_start":
-                # 文本块开始
-                pass
-            elif event.type == "text_delta":
-                # 文本增量 - 实时输出
-                print(event.delta, end="", flush=True)
-            elif event.type == "text_end":
-                # 文本块结束
-                pass
-            elif event.type == "done":
-                # 流完成
-                pass
-            elif event.type == "error":
-                # 错误
-                print(f"\n[错误: {event.error.error_message}]", end="")
-
-        # 获取最终结果
-        message = await stream.result()
+        # 使用 StreamWatcher 自动处理所有事件
+        message = await StreamWatcher().watch(stream)
 
         print("\n" + "=" * 60)
         print("流式生成完成")
