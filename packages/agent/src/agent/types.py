@@ -29,20 +29,19 @@ Agent 类型定义 - 对齐 pi-mono TypeScript 实现
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
+from ai import AssistantMessageEventStream
 from ai.types import (
     AssistantMessage,
+    Context,
     ImageContent,
     Message,
     Model,
     SimpleStreamOptions,
     TextContent,
-    ThinkingBudgets,
-    Tool,
     ToolCall,
     ToolResultMessage,
-    Transport,
 )
 
 # ============================================================================
@@ -54,7 +53,7 @@ type ToolExecutionMode = Literal["sequential", "parallel"]
 
 - "sequential": 顺序执行，每个工具调用完成后再执行下一个
   适用场景：工具之间有依赖关系，需要按顺序执行
-  
+
 - "parallel": 并行执行，所有工具调用同时启动
   适用场景：工具之间相互独立，可以提高执行效率
 
@@ -64,7 +63,7 @@ type ToolExecutionMode = Literal["sequential", "parallel"]
     >>> # 顺序执行（有依赖关系）
     >>> config.tool_execution = "sequential"
     >>> # 先查询用户信息，再根据用户ID查询订单
-    
+
     >>> # 并行执行（相互独立）
     >>> config.tool_execution = "parallel"
     >>> # 同时查询天气、新闻、股票价格
@@ -85,14 +84,18 @@ type ThinkingLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 示例：
     >>> agent.set_thinking_level("high")  # 复杂推理任务
     >>> await agent.prompt("证明勾股定理")
-    
+
     >>> agent.set_thinking_level("off")   # 简单问答
     >>> await agent.prompt("今天星期几？")
 """
 
 type StreamFn = Callable[
-    [Model, Any, Any],
-    Awaitable[Any],  # AssistantMessageEventStream
+    [
+        Model,  # 模型
+        Context,  # 上下文
+        SimpleStreamOptions | None,  # 选项
+    ],
+    Awaitable[AssistantMessageEventStream],
 ]
 """流式调用函数类型
 
@@ -116,7 +119,7 @@ type StreamFn = Callable[
     ...     # 自定义流式逻辑
     ...     stream = provider.stream_simple(model, context, options)
     ...     return stream
-    >>> 
+    >>>
     >>> agent = Agent(AgentOptions(stream_fn=custom_stream_fn))
 """
 
@@ -168,7 +171,7 @@ class AgentTool(Protocol):
 
     name: str
     """工具唯一标识符
-    
+
     命名规范：
     - 使用小写字母和下划线
     - 简洁明了，如 "get_weather", "create_file"
@@ -177,24 +180,24 @@ class AgentTool(Protocol):
 
     description: str
     """工具功能描述
-    
+
     这是 LLM 理解工具用途的关键信息。好的描述应该：
     - 说明工具的作用
     - 说明适用场景
     - 说明返回值的格式
-    
+
     示例：
         "获取指定城市的当前天气信息，包括温度、湿度和天气状况"
     """
 
     parameters: Any
     """参数定义（JSON Schema 格式）
-    
+
     必须符合 JSON Schema 规范，用于：
     1. LLM 生成符合 schema 的参数
     2. 运行时验证输入数据
     3. 提供类型提示和自动补全
-    
+
     示例：
         {
             "type": "object",
@@ -215,7 +218,7 @@ class AgentTool(Protocol):
 
     label: str
     """人类可读标签
-    
+
     用于 UI 显示，如工具列表、执行日志等。
     示例："天气查询", "文件写入"
     """
@@ -347,22 +350,22 @@ class AgentToolResult[TDetails]:
 
     content: Sequence[TextContent | ImageContent]
     """展示内容列表
-    
+
     用于：
     1. 添加到 LLM 上下文作为 toolResult 消息
     2. 在 UI 中展示执行结果
-    
+
     注意：通常只有一个元素，但复杂工具可能返回多个内容块
     """
 
     details: TDetails
     """详细数据
-    
+
     任意类型，用于：
     1. 后续处理（如保存到数据库）
     2. 调试和日志记录
     3. afterToolCall hook 的处理
-    
+
     注意：此数据不直接发送给 LLM，仅用于程序内部
     """
 
@@ -441,7 +444,7 @@ class BeforeToolCallResult:
 
     reason: str | None
     """阻止原因
-    
+
     当 block=True 时显示给用户和 LLM 的消息
     """
 
@@ -541,7 +544,7 @@ class BeforeToolCallContext:
 
     assistant_message: AssistantMessage
     """请求工具调用的助手消息
-    
+
     包含完整的助手响应，包括所有内容块
     """
 
@@ -550,13 +553,13 @@ class BeforeToolCallContext:
 
     args: Any
     """验证后的参数
-    
+
     已经过 JSON Schema 验证，类型安全
     """
 
     context: AgentContext
     """当前 Agent 上下文
-    
+
     包含系统提示、消息历史和可用工具
     """
 
@@ -607,7 +610,7 @@ class AfterToolCallContext:
 
     result: AgentToolResult[Any]
     """执行后的原始结果
-    
+
     尚未应用 afterToolCall 覆盖
     """
 
@@ -664,19 +667,19 @@ class AgentContext:
 
     system_prompt: str
     """系统提示词
-    
+
     定义助手的行为准则、能力范围、输出格式等
     """
 
     messages: list[AgentMessage]
     """消息历史列表
-    
+
     包含 user、assistant、toolResult 消息的完整对话历史
     """
 
     tools: list[AgentTool] | None
     """可用工具列表
-    
+
     None 表示无工具，空列表 [] 也表示无工具
     """
 
@@ -772,25 +775,25 @@ class AgentState:
 
     is_streaming: bool
     """是否正在流式输出
-    
+
     True 表示 LLM 正在生成回复，此时不应发送新 prompt
     """
 
     stream_message: AgentMessage | None
     """当前流式消息
-    
+
     is_streaming=True 时，表示正在生成的部分消息
     """
 
     pending_tool_calls: set[str]
     """待执行的工具调用ID集合
-    
+
     用于跟踪哪些工具调用正在执行中
     """
 
     error: str | None
     """错误信息
-    
+
     上一次执行的错误信息，成功后应清除
     """
 
@@ -834,16 +837,87 @@ class AgentState:
 # AgentEvent - Agent 事件
 # ============================================================================
 
-AgentStartEvent: TypeAlias = dict[str, Literal["agent_start"]]
-AgentEndEvent: TypeAlias = dict[str, Any]
-TurnStartEvent: TypeAlias = dict[str, Literal["turn_start"]]
-TurnEndEvent: TypeAlias = dict[str, Any]
-MessageStartEvent: TypeAlias = dict[str, Any]
-MessageUpdateEvent: TypeAlias = dict[str, Any]
-MessageEndEvent: TypeAlias = dict[str, Any]
-ToolExecutionStartEvent: TypeAlias = dict[str, Any]
-ToolExecutionUpdateEvent: TypeAlias = dict[str, Any]
-ToolExecutionEndEvent: TypeAlias = dict[str, Any]
+# 引入 AssistantMessageEvent 用于 message_update 事件
+from ai.types import AssistantMessageEvent
+
+
+class AgentStartEvent(TypedDict):
+    """Agent 开始处理事件"""
+
+    type: Literal["agent_start"]
+
+
+class AgentEndEvent(TypedDict):
+    """Agent 处理完成事件"""
+
+    type: Literal["agent_end"]
+    messages: list[AgentMessage]
+
+
+class TurnStartEvent(TypedDict):
+    """Turn 开始事件 - 一个 Turn 是助手回复 + 工具调用/结果"""
+
+    type: Literal["turn_start"]
+
+
+class TurnEndEvent(TypedDict):
+    """Turn 结束事件"""
+
+    type: Literal["turn_end"]
+    message: AgentMessage
+    tool_results: list[ToolResultMessage]
+
+
+class MessageStartEvent(TypedDict):
+    """消息开始生成事件"""
+
+    type: Literal["message_start"]
+    message: AgentMessage
+
+
+class MessageUpdateEvent(TypedDict):
+    """消息内容更新事件（流式）- 仅对助手消息发射"""
+
+    type: Literal["message_update"]
+    message: AgentMessage
+    assistant_message_event: AssistantMessageEvent
+
+
+class MessageEndEvent(TypedDict):
+    """消息生成完成事件"""
+
+    type: Literal["message_end"]
+    message: AgentMessage
+
+
+class ToolExecutionStartEvent(TypedDict):
+    """工具开始执行事件"""
+
+    type: Literal["tool_execution_start"]
+    tool_call_id: str
+    tool_name: str
+    args: Any
+
+
+class ToolExecutionUpdateEvent(TypedDict):
+    """工具执行更新事件"""
+
+    type: Literal["tool_execution_update"]
+    tool_call_id: str
+    tool_name: str
+    args: Any
+    partial_result: Any
+
+
+class ToolExecutionEndEvent(TypedDict):
+    """工具执行完成事件"""
+
+    type: Literal["tool_execution_end"]
+    tool_call_id: str
+    tool_name: str
+    result: Any
+    is_error: bool
+
 
 type AgentEvent = (
     AgentStartEvent
@@ -881,7 +955,7 @@ type AgentEvent = (
     >>> def on_event(event):
     ...     if event.get("type") == "message_end":
     ...         print(f"消息：{event.get('message')}")
-    >>> 
+    >>>
     >>> agent.subscribe(on_event)
 
 用途：
@@ -897,7 +971,7 @@ type AgentEvent = (
 # ============================================================================
 
 type BeforeToolCallHook = Callable[
-    [BeforeToolCallContext, Any],
+    [BeforeToolCallContext, AbortSignal | None],
     Awaitable[BeforeToolCallResult | None],
 ]
 """beforeToolCall 钩子函数类型
@@ -915,7 +989,7 @@ type BeforeToolCallHook = Callable[
 """
 
 type AfterToolCallHook = Callable[
-    [AfterToolCallContext, Any],
+    [AfterToolCallContext, AbortSignal | None],
     Awaitable[AfterToolCallResult | None],
 ]
 """afterToolCall 钩子函数类型
@@ -957,23 +1031,23 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     model: Model | None = None
     """使用的模型实例
-    
+
     必须提供有效的 Model 实例，用于 LLM 调用
     """
 
     convert_to_llm: Callable[[list[AgentMessage]], Awaitable[list[Message]]] | None = None
     """消息转换函数
-    
+
     将 AgentMessage[] 转换为 LLM 兼容的 Message[]。
-    
+
     默认实现：
         过滤出 role 为 user/assistant/toolResult 的消息
-    
+
     自定义场景：
         - 上下文压缩：截断过长的历史
         - 格式转换：修改消息格式
         - 附件处理：转换图像、文件等
-    
+
     示例：
         >>> async def custom_convert(messages):
         ...     # 只保留最近 10 条消息
@@ -984,17 +1058,17 @@ class AgentLoopConfig(SimpleStreamOptions):
         None
     )
     """上下文转换函数（可选）
-    
+
     在 convert_to_llm 之前应用，用于上下文修剪、注入外部上下文等。
-    
+
     执行顺序：
         messages → transform_context → convert_to_llm → LLM
-    
+
     适用场景：
         - 上下文修剪：Token 数超过限制时删除旧消息
         - 外部上下文：注入检索到的文档
         - 摘要生成：将长历史替换为摘要
-    
+
     示例：
         >>> async def prune_context(messages, signal):
         ...     total_tokens = estimate_tokens(messages)
@@ -1005,15 +1079,15 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     get_api_key: Callable[[str], Awaitable[str | None]] | None = None
     """API Key 动态获取函数
-    
+
     每次 LLM 调用前执行，支持动态令牌（如 OAuth）。
-    
+
     参数：
         provider: 提供商名称，如 "kimi", "openai"
-    
+
     返回：
         API Key 字符串，或 None（使用环境变量）
-    
+
     示例：
         >>> async def get_key(provider):
         ...     if provider == "kimi":
@@ -1023,14 +1097,14 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     get_steering_messages: Callable[[], Awaitable[list[AgentMessage]]] | None = None
     """Steering 消息获取函数
-    
+
     在每次 Turn 开始时调用，获取 steering 消息。
     Steering 消息会在当前 Turn 中优先于 LLM 响应处理。
-    
+
     用途：
         - 用户中断：插入新指令
         - 系统干预：注入系统消息
-    
+
     注意：
         - 返回的消息会被添加到上下文
         - 执行后清空队列
@@ -1038,14 +1112,14 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     get_follow_up_messages: Callable[[], Awaitable[list[AgentMessage]]] | None = None
     """Follow-up 消息获取函数
-    
+
     在 Turn 结束时调用，获取 follow-up 消息。
     如果有 follow-up 消息，会启动新的 Turn 继续对话。
-    
+
     用途：
         - 自动追问：根据上下文生成后续问题
         - 任务链：分解复杂任务为多个步骤
-    
+
     注意：
         - 返回空列表表示没有 follow-up
         - 会触发新的 Agent Loop 迭代
@@ -1056,9 +1130,9 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     before_tool_call: BeforeToolCallHook | None = None
     """工具执行前钩子
-    
+
     在工具执行前调用，可用于权限检查、参数验证。
-    
+
     示例：
         >>> async def before_hook(ctx, signal):
         ...     if ctx.tool_call.name == "delete_file":
@@ -1070,9 +1144,9 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     after_tool_call: AfterToolCallHook | None = None
     """工具执行后钩子
-    
+
     在工具执行后调用，可用于结果修改、日志记录。
-    
+
     示例：
         >>> async def after_hook(ctx, signal):
         ...     # 记录工具调用日志

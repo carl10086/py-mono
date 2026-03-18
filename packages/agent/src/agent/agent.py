@@ -44,8 +44,7 @@ Agent 类 - Agent 运行时管理
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from ai.types import (
     AssistantMessage,
@@ -53,29 +52,23 @@ from ai.types import (
     Model,
     TextContent,
     ThinkingBudgets,
-    ToolResultMessage,
     Transport,
 )
 
 from agent.agent_loop import run_agent_loop, run_agent_loop_continue
 from agent.types import (
-    AfterToolCallContext,
     AfterToolCallHook,
-    AfterToolCallResult,
     AgentContext,
     AgentEvent,
     AgentLoopConfig,
     AgentMessage,
     AgentState,
     AgentTool,
-    BeforeToolCallContext,
     BeforeToolCallHook,
-    BeforeToolCallResult,
     StreamFn,
     ThinkingLevel,
     ToolExecutionMode,
 )
-
 
 # ============================================================================
 # AgentOptions
@@ -115,9 +108,9 @@ class AgentOptions:
 
     initial_state: AgentState | None
     """初始状态
-    
+
     用于恢复之前的会话。保存 agent.state 后可以恢复：
-    
+
     >>> saved_state = agent.state
     >>> # ... 稍后恢复
     >>> agent = Agent(AgentOptions(initial_state=saved_state))
@@ -125,12 +118,12 @@ class AgentOptions:
 
     convert_to_llm: Callable[[list[AgentMessage]], Awaitable[list[Any]]] | None
     """消息转换函数
-    
+
     将 AgentMessage[] 转换为 LLM 兼容的 Message[]。
-    
+
     默认行为：
         过滤 role 为 user/assistant/toolResult 的消息
-    
+
     自定义场景：
         - 上下文压缩：截断过长的历史
         - 格式转换：特殊消息类型处理
@@ -138,90 +131,90 @@ class AgentOptions:
 
     transform_context: Callable[[list[AgentMessage], Any], Awaitable[list[AgentMessage]]] | None
     """上下文转换函数
-    
+
     在 convert_to_llm 之前应用，用于上下文修剪等。
-    
+
     执行顺序：messages → transform_context → convert_to_llm → LLM
     """
 
     steering_mode: Literal["all", "one-at-a-time"]
     """Steering 模式
-    
+
     - "all": 一次发送所有 steering 消息
     - "one-at-a-time": 每次只发送一条（默认）
     """
 
     follow_up_mode: Literal["all", "one-at-a-time"]
     """Follow-up 模式
-    
+
     - "all": 一次发送所有 follow-up 消息
     - "one-at-a-time": 每次只发送一条（默认）
     """
 
     stream_fn: StreamFn | None
     """自定义流式函数
-    
+
     用于自定义 LLM 调用逻辑，如代理后端、自定义路由等。
-    
+
     默认使用 provider.stream_simple
     """
 
     session_id: str | None
     """会话标识符
-    
+
     用于支持会话级缓存的 provider（如 OpenAI Codex）
     """
 
     get_api_key: Callable[[str], Awaitable[str | None] | str | None] | None
     """API Key 动态获取函数
-    
+
     参数：provider 名称
     返回：API Key 或 None
-    
+
     用于动态令牌（如 OAuth）
     """
 
     on_payload: Any | None
     """Payload 检查函数
-    
+
     在发送给 provider 前检查或修改请求 payload
     """
 
     thinking_budgets: ThinkingBudgets | None
     """思考预算配置
-    
+
     自定义各级思考等级的 token 预算
     """
 
     transport: Transport
     """传输方式
-    
+
     支持多传输方式的 provider 使用
     默认 "sse"
     """
 
     max_retry_delay_ms: int | None
     """最大重试延迟（毫秒）
-    
+
     服务器请求长等待时，超过此值立即失败
     """
 
     tool_execution: ToolExecutionMode
     """工具执行模式
-    
+
     - "sequential": 顺序执行
     - "parallel": 并行执行（默认）
     """
 
     before_tool_call: BeforeToolCallHook | None
     """工具执行前钩子
-    
+
     用于权限检查、参数验证等
     """
 
     after_tool_call: AfterToolCallHook | None
     """工具执行后钩子
-    
+
     用于结果修改、日志记录等
     """
 
@@ -284,8 +277,8 @@ class AgentOptions:
 # Agent 类
 # ============================================================================
 
-from collections.abc import Callable
-from typing import Awaitable, Literal
+from collections.abc import Awaitable, Callable
+from typing import Literal
 
 
 class Agent:
@@ -412,7 +405,7 @@ class Agent:
     @property
     def transport(self) -> Transport:
         """传输方式"""
-        return self._transport
+        return cast(Transport, self._transport)
 
     def set_transport(self, value: Transport) -> None:
         """设置传输方式
@@ -435,7 +428,7 @@ class Agent:
     @property
     def tool_execution(self) -> ToolExecutionMode:
         """工具执行模式"""
-        return self._tool_execution
+        return cast(ToolExecutionMode, self._tool_execution)
 
     def set_tool_execution(self, value: ToolExecutionMode) -> None:
         """设置工具执行模式
@@ -603,7 +596,7 @@ class Agent:
         返回：
             当前 steering 模式
         """
-        return self._steering_mode
+        return cast(Literal["all", "one-at-a-time"], self._steering_mode)
 
     def set_follow_up_mode(self, mode: Literal["all", "one-at-a-time"]) -> None:
         """设置 follow-up 模式
@@ -623,7 +616,7 @@ class Agent:
         返回：
             当前 follow-up 模式
         """
-        return self._follow_up_mode
+        return cast(Literal["all", "one-at-a-time"], self._follow_up_mode)
 
     def set_tools(self, t: list[AgentTool]) -> None:
         """设置工具列表
@@ -972,7 +965,6 @@ class Agent:
         self._state.error = None
 
         # 推理设置
-        reasoning = self._state.thinking_level if self._state.thinking_level != "off" else None
 
         # 构建上下文
         context = AgentContext(
@@ -989,7 +981,7 @@ class Agent:
             convert_to_llm=self._convert_to_llm,  # type: ignore[arg-type]
             transform_context=self._transform_context,
             get_api_key=self._get_api_key,  # type: ignore[arg-type]
-            tool_execution=self._tool_execution,
+            tool_execution=cast(ToolExecutionMode, self._tool_execution),
             before_tool_call=self._before_tool_call,
             after_tool_call=self._after_tool_call,
         )
@@ -1049,10 +1041,7 @@ class Agent:
         """
         event_type = event.get("type", "")
 
-        if event_type == "message_start":
-            self._state.stream_message = event.get("message")
-
-        elif event_type == "message_update":
+        if event_type == "message_start" or event_type == "message_update":
             self._state.stream_message = event.get("message")
 
         elif event_type == "message_end":
@@ -1073,7 +1062,7 @@ class Agent:
 
         elif event_type == "turn_end":
             msg = event.get("message")
-            if msg and hasattr(msg, "error_message") and msg.error_message:
+            if msg and isinstance(msg, AssistantMessage) and msg.error_message:
                 self._state.error = msg.error_message
 
         elif event_type == "agent_end":
