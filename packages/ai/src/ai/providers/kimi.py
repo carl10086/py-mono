@@ -1,14 +1,14 @@
 """
-Kimi Provider - 完全独立实现。
+Kimi Provider - 基于 Anthropic SDK 实现。
 
-使用 OpenAI SDK 访问 Kimi API，支持：
+使用 Anthropic SDK 访问 Kimi API，支持：
 - 流式对话生成
 - Thinking/Reasoning 模式
 - Prompt 缓存控制
 
 环境变量：
-- KIMI_API_KEY / API_KEY: API 密钥
-- KIMI_BASE_URL: API 地址（默认: https://api.moonshot.ai/v1）
+- KIMI_API_KEY / API_KEY / ANTHROPIC_API_KEY: API 密钥
+- ANTHROPIC_BASE_URL: API 地址（默认: https://api.kimi.com/coding/）
 
 默认配置（与 kimi-cli 保持一致）：
 - 默认模型: kimi-k2-turbo-preview
@@ -19,12 +19,10 @@ Kimi Provider - 完全独立实现。
 
 from __future__ import annotations
 
-import asyncio
-import copy
 import json
 import os
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from ai.stream import (
     AssistantMessageEventStream,
@@ -51,6 +49,7 @@ from ai.types import (
     ModelCapabilities,
     ModelCost,
     SimpleStreamOptions,
+    StopReason,
     StreamOptions,
     TextContent,
     ThinkingContent,
@@ -66,20 +65,13 @@ from ai.types import (
 # 常量定义 - Kimi API 默认配置
 # =============================================================================
 
-# 默认模型配置
 DEFAULT_MODEL: str = "kimi-k2-turbo-preview"
-DEFAULT_BASE_URL: str = "https://api.moonshot.ai/v1"
-DEFAULT_MAX_TOKENS: int = 32000  # 默认输出 token 数（与 kimi-cli 一致）
+DEFAULT_BASE_URL: str = "https://api.kimi.com/coding/"
+DEFAULT_MAX_TOKENS: int = 32000
 
-# 模型能力限制
-CONTEXT_WINDOW: int = 262144  # 256K 上下文窗口
-MAX_OUTPUT_TOKENS: int = 32768  # 最大输出 token 数
+CONTEXT_WINDOW: int = 262144
+MAX_OUTPUT_TOKENS: int = 32768
 
-# Generation 参数默认值
-DEFAULT_TEMPERATURE: float | None = None
-DEFAULT_TOP_P: float | None = None
-
-# Thinking 预算映射（tokens）
 THINKING_BUDGETS: dict[str, int | None] = {
     "off": None,
     "minimal": 512,
@@ -89,7 +81,6 @@ THINKING_BUDGETS: dict[str, int | None] = {
     "xhigh": 32000,
 }
 
-# 支持的模型列表
 SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
     "kimi-k2-turbo-preview": {
         "name": "Kimi K2 Turbo",
@@ -105,14 +96,169 @@ SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-# 环境变量名称
 ENV_API_KEY: str = "KIMI_API_KEY"
 ENV_API_KEY_ALT: str = "API_KEY"
-ENV_BASE_URL: str = "KIMI_BASE_URL"
+ENV_API_KEY_ANTHROPIC: str = "ANTHROPIC_API_KEY"
+ENV_BASE_URL: str = "ANTHROPIC_BASE_URL"
 ENV_BASE_URL_ALT: str = "BASE_URL"
 
 
 type ThinkingLevel = Literal["minimal", "low", "medium", "high", "xhigh"]
+
+
+def parse_json(json_str: str) -> dict[str, Any]:
+    """解析可能不完整的 JSON。"""
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        # 尝试提取完整对象
+        depth = 0
+        last_valid = 0
+        in_string = False
+        escape = False
+
+        for i, char in enumerate(json_str):
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"' and not escape:
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char in "{[":
+                    depth += 1
+                elif char == "}" or char == "]":
+                    depth -= 1
+                    if depth == 0:
+                        last_valid = i + 1
+
+        if last_valid > 0:
+            try:
+                return json.loads(json_str[:last_valid])
+            except json.JSONDecodeError:
+                pass
+        return {}
+
+
+def map_stop_reason(reason: str | None) -> StopReason:
+    """映射 Anthropic 的停止原因。"""
+    if reason is None:
+        return "stop"
+    mapping: dict[str, StopReason] = {
+        "end_turn": "stop",
+        "max_tokens": "length",
+        "tool_use": "toolUse",
+        "stop_sequence": "stop",
+    }
+    return mapping.get(reason, "stop")
+
+
+def convert_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
+    """转换消息为 Anthropic 格式。"""
+    result: list[dict[str, Any]] = []
+
+    for msg in messages:
+        if isinstance(msg, UserMessage):
+            result.append(_convert_user_message(msg))
+        elif isinstance(msg, AssistantMessage):
+            result.append(_convert_assistant_message(msg))
+        elif isinstance(msg, ToolResultMessage):
+            result.append(_convert_tool_result_message(msg))
+
+    return result
+
+
+def _convert_user_message(msg: UserMessage) -> dict[str, Any]:
+    """转换用户消息为 Anthropic 格式。"""
+    if isinstance(msg.content, str):
+        return {"role": "user", "content": msg.content}
+
+    blocks = []
+    for item in msg.content:
+        if isinstance(item, TextContent):
+            blocks.append({"type": "text", "text": item.text})
+        elif isinstance(item, ImageContent):
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": item.mime_type,
+                        "data": item.data,
+                    },
+                }
+            )
+    return {"role": "user", "content": blocks}
+
+
+def _convert_assistant_message(msg: AssistantMessage) -> dict[str, Any]:
+    """转换助手消息为 Anthropic 格式。"""
+    blocks = []
+    for item in msg.content:
+        if isinstance(item, TextContent):
+            blocks.append({"type": "text", "text": item.text})
+        elif isinstance(item, ToolCall):
+            blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": item.id,
+                    "name": item.name,
+                    "input": item.arguments,
+                }
+            )
+    return {"role": "assistant", "content": blocks}
+
+
+def _convert_tool_result_message(msg: ToolResultMessage) -> dict[str, Any]:
+    """转换工具结果消息为 Anthropic 格式。"""
+    content = (
+        msg.content[0].text
+        if len(msg.content) == 1
+        else [
+            {"type": "text", "text": item.text}
+            if isinstance(item, TextContent)
+            else {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": item.mime_type,
+                    "data": item.data,
+                },
+            }
+            for item in msg.content
+        ]
+    )
+    tool_result = {
+        "type": "tool_result",
+        "tool_use_id": msg.tool_call_id,
+        "content": content,
+    }
+    if msg.is_error:
+        tool_result["is_error"] = True
+    return {"role": "user", "content": [tool_result]}
+
+
+def convert_tools(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+    """转换工具定义为 Anthropic 格式。"""
+    result = []
+    for tool in tools:
+        schema = tool.parameters
+        if hasattr(tool.parameters, "model_json_schema"):
+            schema = tool.parameters.model_json_schema()
+        elif not isinstance(tool.parameters, dict):
+            schema = {"type": "object"}
+
+        result.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": schema,
+            }
+        )
+    return result
 
 
 class KimiOptions(StreamOptions):
@@ -122,11 +268,11 @@ class KimiOptions(StreamOptions):
 
 
 class KimiProvider:
-    """Kimi Provider - 使用 OpenAI SDK。
+    """Kimi Provider - 使用 Anthropic SDK。
 
     支持从环境变量自动读取配置：
-    - KIMI_API_KEY / API_KEY: API 密钥
-    - KIMI_BASE_URL / BASE_URL: API 地址
+    - KIMI_API_KEY / API_KEY / ANTHROPIC_API_KEY: API 密钥
+    - ANTHROPIC_BASE_URL / BASE_URL: API 地址
 
     默认配置（与 kimi-cli 保持一致）：
         - 模型: kimi-k2-turbo-preview
@@ -139,14 +285,6 @@ class KimiProvider:
         provider = KimiProvider()
         provider = provider.with_thinking("medium")
         stream = provider.stream(model, context)
-
-        # 自定义配置
-        provider = KimiProvider(
-            model="kimi-k2",
-            api_key="your-key",
-            base_url="https://api.moonshot.ai/v1",
-            default_max_tokens=32000,
-        )
     """
 
     name: str = "kimi"
@@ -164,19 +302,25 @@ class KimiProvider:
         Args:
             model: 模型 ID，默认 kimi-k2-turbo-preview
             api_key: API 密钥，默认从环境变量读取
-            base_url: API 地址，默认 https://api.moonshot.ai/v1
+            base_url: API 地址，默认 https://api.kimi.com/coding/
             default_max_tokens: 默认最大输出 token 数，默认 32000
         """
         self._model = model
         self._api_key = api_key or self._get_api_key()
         self._base_url = base_url or self._get_base_url()
         self._default_max_tokens = default_max_tokens
-        self._generation_kwargs: dict[str, Any] = {}
+        self._thinking_budget: int | None = None
+        self._cache_key: str | None = None
 
     @staticmethod
     def _get_api_key() -> str:
         """从环境变量获取 API Key。"""
-        return os.environ.get(ENV_API_KEY) or os.environ.get(ENV_API_KEY_ALT) or ""
+        return (
+            os.environ.get(ENV_API_KEY)
+            or os.environ.get(ENV_API_KEY_ALT)
+            or os.environ.get(ENV_API_KEY_ANTHROPIC)
+            or ""
+        )
 
     @staticmethod
     def _get_base_url() -> str:
@@ -190,20 +334,12 @@ class KimiProvider:
             effort: 思考强度 - off/minimal/low/medium/high/xhigh
 
         Returns:
-            新的 KimiProvider 实例（不可变模式）
+            新的 KimiProvider 实例
         """
+        import copy
+
         new_provider = copy.copy(self)
-        new_provider._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-
-        budget = THINKING_BUDGETS.get(effort)
-        thinking_config = (
-            {"type": "disabled"} if budget is None else {"type": "enabled", "budget_tokens": budget}
-        )
-
-        extra_body = new_provider._generation_kwargs.get("extra_body", {})
-        extra_body["thinking"] = thinking_config
-        new_provider._generation_kwargs["extra_body"] = extra_body
-
+        new_provider._thinking_budget = THINKING_BUDGETS.get(effort)
         return new_provider
 
     def with_cache_key(self, key: str) -> KimiProvider:
@@ -213,11 +349,13 @@ class KimiProvider:
             key: 缓存 key（通常使用 session_id）
 
         Returns:
-            新的 KimiProvider 实例（不可变模式）
+            新的 KimiProvider 实例
         """
+        import copy
+
         new_provider = copy.copy(self)
-        new_provider._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-        new_provider._generation_kwargs["prompt_cache_key"] = key
+        # Kimi 通过 Anthropic SDK 支持 prompt_cache_key
+        new_provider._cache_key = key
         return new_provider
 
     def get_model(self, model_id: str | None = None) -> Model:
@@ -242,7 +380,7 @@ class KimiProvider:
         return Model(
             id=model_id,
             name=config["name"],
-            api="openai-chat",
+            api="anthropic-messages",
             provider="kimi",
             base_url=self._base_url,
             capabilities=ModelCapabilities(
@@ -259,7 +397,7 @@ class KimiProvider:
         return Model(
             id=model_id,
             name=model_id,
-            api="openai-chat",
+            api="anthropic-messages",
             provider="kimi",
             base_url=self._base_url,
             capabilities=ModelCapabilities(reasoning=False, input=["text"]),
@@ -276,27 +414,19 @@ class KimiProvider:
     @property
     def thinking_effort(self) -> ThinkingLevel | Literal["off"] | None:
         """获取当前 thinking 配置。"""
-        extra_body = self._generation_kwargs.get("extra_body", {})
-        cfg = extra_body.get("thinking")
-
-        if not cfg:
+        if self._thinking_budget is None:
             return None
-        if cfg.get("type") == "disabled":
+        if self._thinking_budget == 0:
             return "off"
 
-        budget = cfg.get("budget_tokens", 0)
-        return self._budget_to_effort(budget)
-
-    @staticmethod
-    def _budget_to_effort(budget: int) -> ThinkingLevel:
-        """将 budget_tokens 映射回 effort 等级。"""
-        if budget <= 512:
+        # 将 budget 映射回 effort 等级
+        if self._thinking_budget <= 512:
             return "minimal"
-        elif budget <= 1024:
+        elif self._thinking_budget <= 1024:
             return "low"
-        elif budget <= 4096:
+        elif self._thinking_budget <= 4096:
             return "medium"
-        elif budget <= 16000:
+        elif self._thinking_budget <= 16000:
             return "high"
         else:
             return "xhigh"
@@ -307,283 +437,233 @@ class KimiProvider:
         context: Context,
         options: KimiOptions | None = None,
     ) -> AssistantMessageEventStream:
-        """流式生成响应。
+        """流式生成响应。"""
+        from anthropic import AsyncAnthropic
 
-        Args:
-            model: 模型配置或模型 ID
-            context: 对话上下文
-            options: 生成选项
-
-        Returns:
-            流式响应事件流
-        """
         model_obj = model if isinstance(model, Model) else self.get_model(model)
         stream = create_assistant_message_event_stream()
 
-        asyncio.create_task(self._stream_worker(model_obj, context, options, stream))
-        return stream
-
-    async def _stream_worker(
-        self,
-        model: Model,
-        context: Context,
-        options: KimiOptions | None,
-        stream: AssistantMessageEventStream,
-    ) -> None:
-        """后台流式处理任务。"""
-        output = self._create_initial_output(model)
-
-        try:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
-            params = self._build_request_params(model, context, options)
-            stream.push(EventStart(partial=output))
-
-            await self._process_stream(client, params, output, stream)
-            stream.push(EventDone(reason="stop", message=output))
-
-        except Exception as e:
-            output.stop_reason = "error"
-            output.error_message = str(e)
-            stream.push(EventError(reason="error", error=output))
-
-    def _create_initial_output(self, model: Model) -> AssistantMessage:
-        """创建初始 AssistantMessage。"""
-        return AssistantMessage(
-            role="assistant",
-            content=[],
-            api=model.api,
-            provider=model.provider,
-            model=model.id,
-            usage=Usage(
-                input=0,
-                output=0,
-                cache_read=0,
-                cache_write=0,
-                total_tokens=0,
-                cost=UsageCost(input=0, output=0, cache_read=0, cache_write=0, total=0),
-            ),
-            stop_reason="stop",
-        )
-
-    def _build_request_params(
-        self,
-        model: Model,
-        context: Context,
-        options: KimiOptions | None,
-    ) -> dict[str, Any]:
-        """构建 API 请求参数。"""
-        params: dict[str, Any] = {
-            "model": model.id,
-            "messages": convert_messages(context.messages),
-            "max_tokens": (
-                options.max_tokens if options and options.max_tokens else model.max_tokens
-            ),
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-
-        if context.system_prompt:
-            params["system"] = context.system_prompt
-        if options and options.temperature is not None:
-            params["temperature"] = options.temperature
-        if context.tools:
-            params["tools"] = convert_tools(context.tools)
-        if options and options.tool_choice is not None:
-            params["tool_choice"] = options.tool_choice
-
-        # 合并 generation_kwargs（thinking、cache_key 等）
-        params.update(self._generation_kwargs)
-
-        return params
-
-    async def _process_stream(
-        self,
-        client: Any,
-        params: dict[str, Any],
-        output: AssistantMessage,
-        stream: AssistantMessageEventStream,
-    ) -> None:
-        """处理流式响应。"""
-        current_content: dict[str, Any] | None = None
-
-        response = await client.chat.completions.create(**params)
-
-        async for chunk in response:
-            self._update_usage(output, chunk)
-
-            choices = getattr(chunk, "choices", None)
-            if not choices:
-                continue
-
-            delta = choices[0].delta if choices else None
-            if not delta:
-                continue
-
-            # 处理 thinking 内容
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning:
-                current_content = self._handle_reasoning(reasoning, current_content, output, stream)
-
-            # 处理文本内容
-            if delta.content:
-                current_content = self._handle_text(
-                    str(delta.content), current_content, output, stream
-                )
-
-            # 处理工具调用
-            tool_calls = getattr(delta, "tool_calls", None)
-            if tool_calls:
-                for tool_call in tool_calls:
-                    current_content = self._handle_tool_call(
-                        tool_call, current_content, output, stream
-                    )
-
-        # 发送结束事件
-        self._finalize_content(current_content, output, stream)
-
-    def _update_usage(self, output: AssistantMessage, chunk: Any) -> None:
-        """更新 Token 使用量。"""
-        usage = getattr(chunk, "usage", None)
-        if not usage:
-            return
-
-        output.usage.input = getattr(usage, "prompt_tokens", 0) or 0
-        output.usage.output = getattr(usage, "completion_tokens", 0) or 0
-        output.usage.total_tokens = output.usage.input + output.usage.output
-
-    def _handle_reasoning(
-        self,
-        reasoning: str,
-        current: dict[str, Any] | None,
-        output: AssistantMessage,
-        stream: AssistantMessageEventStream,
-    ) -> dict[str, Any]:
-        """处理 reasoning/thinking 内容。"""
-        # 开始新的 thinking 块
-        if not current or current.get("type") != "thinking":
-            self._finalize_content(current, output, stream)
-
-            block = ThinkingContent(thinking="")
-            content_list = cast(list[Any], output.content)
-            content_list.append(block)
-            idx = len(content_list) - 1
-            stream.push(EventThinkingStart(content_index=idx, partial=output))
-            current = {"type": "thinking", "block": block, "index": idx}
-
-        # 追加内容
-        block = current["block"]
-        block.thinking += reasoning
-        stream.push(
-            EventThinkingDelta(
-                content_index=current["index"],
-                delta=reasoning,
-                partial=output,
+        async def _run():
+            output = AssistantMessage(
+                role="assistant",
+                content=[],
+                api=model_obj.api,
+                provider=model_obj.provider,
+                model=model_obj.id,
+                usage=Usage(
+                    input=0,
+                    output=0,
+                    cache_read=0,
+                    cache_write=0,
+                    total_tokens=0,
+                    cost=UsageCost(input=0, output=0, cache_read=0, cache_write=0, total=0),
+                ),
+                stop_reason="stop",
             )
-        )
 
-        return current
-
-    def _handle_text(
-        self,
-        text: str,
-        current: dict[str, Any] | None,
-        output: AssistantMessage,
-        stream: AssistantMessageEventStream,
-    ) -> dict[str, Any]:
-        """处理文本内容。"""
-        # 开始新的文本块
-        if not current or current.get("type") != "text":
-            self._finalize_content(current, output, stream)
-
-            block = TextContent(text="")
-            content_list = cast(list[Any], output.content)
-            content_list.append(block)
-            idx = len(content_list) - 1
-            stream.push(EventTextStart(content_index=idx, partial=output))
-            current = {"type": "text", "block": block, "index": idx}
-
-        # 追加内容
-        block = current["block"]
-        block.text += text
-        stream.push(
-            EventTextDelta(
-                content_index=current["index"],
-                delta=text,
-                partial=output,
-            )
-        )
-
-        return current
-
-    def _handle_tool_call(
-        self,
-        tool_call: Any,
-        current: dict[str, Any] | None,
-        output: AssistantMessage,
-        stream: AssistantMessageEventStream,
-    ) -> dict[str, Any]:
-        """处理工具调用。"""
-        func = getattr(tool_call, "function", None)
-        if not func:
-            return current
-
-        # 开始新的工具调用
-        if not current or current.get("type") != "tool":
-            self._finalize_content(current, output, stream)
-
-            block = ToolCall(
-                id=getattr(tool_call, "id", "") or "",
-                name=getattr(func, "name", "") or "",
-                arguments={},
-            )
-            content_list = cast(list[Any], output.content)
-            content_list.append(block)
-            idx = len(content_list) - 1
-            stream.push(EventToolCallStart(content_index=idx, partial=output))
-            current = {"type": "tool", "block": block, "index": idx, "json": ""}
-
-        # 追加参数
-        args = getattr(func, "arguments", None)
-        if args:
-            current["json"] += str(args)
-            # 尝试解析 JSON
             try:
-                current["block"].arguments = json.loads(current["json"])
-            except json.JSONDecodeError:
-                pass
+                # 创建客户端
+                client = AsyncAnthropic(api_key=self._api_key, base_url=self._base_url)
 
-            stream.push(
-                EventToolCallDelta(
-                    content_index=current["index"],
-                    delta=str(args),
-                    partial=output,
-                )
-            )
+                # 构建参数
+                params: dict[str, Any] = {
+                    "model": model_obj.id,
+                    "messages": convert_messages(context.messages),
+                    "max_tokens": (
+                        options.max_tokens
+                        if options and options.max_tokens
+                        else model_obj.max_tokens
+                    ),
+                }
 
-        return current
+                if context.system_prompt:
+                    params["system"] = context.system_prompt
+                if options and options.temperature is not None:
+                    params["temperature"] = options.temperature
+                if context.tools:
+                    params["tools"] = convert_tools(context.tools)
+                if options and options.tool_choice is not None:
+                    params["tool_choice"] = options.tool_choice
 
-    def _finalize_content(
-        self,
-        current: dict[str, Any] | None,
-        output: AssistantMessage,
-        stream: AssistantMessageEventStream,
-    ) -> None:
-        """完成当前内容块。"""
-        if not current:
-            return
+                # 添加 thinking 配置
+                if self._thinking_budget is not None:
+                    params["extra_body"] = {
+                        "thinking": {
+                            "type": "enabled",
+                            "budget_tokens": self._thinking_budget,
+                        }
+                    }
 
-        idx = current["index"]
-        block = current["block"]
-        content_type = current["type"]
+                # 发送开始事件
+                stream.push(EventStart(partial=output))
 
-        if content_type == "text":
-            stream.push(EventTextEnd(content_index=idx, content=block.text, partial=output))
-        elif content_type == "thinking":
-            stream.push(EventThinkingEnd(content_index=idx, content=block.thinking, partial=output))
-        elif content_type == "tool":
-            stream.push(EventToolCallEnd(content_index=idx, tool_call=block, partial=output))
+                blocks: list[dict] = []
+                current_thinking_block: ThinkingContent | None = None
+
+                # 流式请求
+                async with client.messages.stream(**params) as response:
+                    async for event in response:
+                        if event.type == "message_start":
+                            usage = event.message.usage
+                            output.usage.input = usage.input_tokens or 0
+                            output.usage.output = usage.output_tokens or 0
+                            output.usage.cache_read = (
+                                getattr(usage, "cache_read_input_tokens", 0) or 0
+                            )
+                            output.usage.cache_write = (
+                                getattr(usage, "cache_creation_input_tokens", 0) or 0
+                            )
+                            output.usage.total_tokens = sum(
+                                [
+                                    output.usage.input,
+                                    output.usage.output,
+                                    output.usage.cache_read,
+                                    output.usage.cache_write,
+                                ]
+                            )
+
+                        elif event.type == "content_block_start":
+                            if event.content_block.type == "text":
+                                block = TextContent(text="")
+                                output.content.append(block)
+                                blocks.append(
+                                    {"type": "text", "index": event.index, "block": block}
+                                )
+                                stream.push(
+                                    EventTextStart(
+                                        content_index=len(output.content) - 1, partial=output
+                                    )
+                                )
+
+                            elif event.content_block.type == "thinking":
+                                block = ThinkingContent(thinking="")
+                                output.content.append(block)
+                                current_thinking_block = block
+                                idx = len(output.content) - 1
+                                stream.push(EventThinkingStart(content_index=idx, partial=output))
+
+                            elif event.content_block.type == "tool_use":
+                                block = ToolCall(
+                                    id=event.content_block.id,
+                                    name=event.content_block.name,
+                                    arguments={},
+                                )
+                                output.content.append(block)
+                                blocks.append(
+                                    {
+                                        "type": "tool",
+                                        "index": event.index,
+                                        "block": block,
+                                        "json": "",
+                                    }
+                                )
+                                stream.push(
+                                    EventToolCallStart(
+                                        content_index=len(output.content) - 1, partial=output
+                                    )
+                                )
+
+                        elif event.type == "content_block_delta":
+                            if event.delta.type == "text_delta":
+                                for b in blocks:
+                                    if b["index"] == event.index and b["type"] == "text":
+                                        b["block"].text += event.delta.text
+                                        idx = output.content.index(b["block"])
+                                        stream.push(
+                                            EventTextDelta(
+                                                content_index=idx,
+                                                delta=event.delta.text,
+                                                partial=output,
+                                            )
+                                        )
+                                        break
+
+                            elif event.delta.type == "thinking_delta":
+                                if current_thinking_block:
+                                    current_thinking_block.thinking += event.delta.thinking
+                                    idx = output.content.index(current_thinking_block)
+                                    stream.push(
+                                        EventThinkingDelta(
+                                            content_index=idx,
+                                            delta=event.delta.thinking,
+                                            partial=output,
+                                        )
+                                    )
+
+                            elif event.delta.type == "input_json_delta":
+                                for b in blocks:
+                                    if b["index"] == event.index and b["type"] == "tool":
+                                        b["json"] += event.delta.partial_json
+                                        b["block"].arguments = parse_json(b["json"])
+                                        idx = output.content.index(b["block"])
+                                        stream.push(
+                                            EventToolCallDelta(
+                                                content_index=idx,
+                                                delta=event.delta.partial_json,
+                                                partial=output,
+                                            )
+                                        )
+                                        break
+
+                        elif event.type == "content_block_stop":
+                            # 查找对应的内容块并发送结束事件
+                            for b in blocks:
+                                if b["index"] == event.index:
+                                    if b["type"] == "text":
+                                        idx = output.content.index(b["block"])
+                                        stream.push(
+                                            EventTextEnd(
+                                                content_index=idx,
+                                                content=b["block"].text,
+                                                partial=output,
+                                            )
+                                        )
+                                    elif b["type"] == "tool":
+                                        b["block"].arguments = parse_json(b["json"])
+                                        idx = output.content.index(b["block"])
+                                        stream.push(
+                                            EventToolCallEnd(
+                                                content_index=idx,
+                                                tool_call=b["block"],
+                                                partial=output,
+                                            )
+                                        )
+                                    break
+
+                            # 检查是否是 thinking 块结束
+                            if current_thinking_block and event.content_block:
+                                if getattr(event.content_block, "type", None) == "thinking":
+                                    idx = output.content.index(current_thinking_block)
+                                    stream.push(
+                                        EventThinkingEnd(
+                                            content_index=idx,
+                                            content=current_thinking_block.thinking,
+                                            partial=output,
+                                        )
+                                    )
+                                    current_thinking_block = None
+
+                        elif event.type == "message_delta":
+                            if event.delta.stop_reason:
+                                output.stop_reason = map_stop_reason(event.delta.stop_reason)
+                            if event.usage:
+                                if event.usage.input_tokens is not None:
+                                    output.usage.input = event.usage.input_tokens
+                                if event.usage.output_tokens is not None:
+                                    output.usage.output = event.usage.output_tokens
+
+                # 发送结束事件
+                stream.push(EventDone(reason=output.stop_reason, message=output))
+
+            except Exception as e:
+                output.stop_reason = "error"
+                output.error_message = str(e)
+                stream.push(EventError(reason="error", error=output))
+
+        import asyncio
+
+        asyncio.create_task(_run())
+        return stream
 
     async def complete(
         self,
@@ -617,112 +697,3 @@ class KimiProvider:
         """简化 complete 接口。"""
         s = self.stream_simple(model, context, options)
         return await s.result()
-
-
-def convert_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
-    """转换消息为 OpenAI 格式。"""
-    result: list[dict[str, Any]] = []
-
-    for msg in messages:
-        if isinstance(msg, UserMessage):
-            result.append(convert_user_message(msg))
-        elif isinstance(msg, AssistantMessage):
-            result.append(convert_assistant_message(msg))
-        elif isinstance(msg, ToolResultMessage):
-            result.append(convert_tool_result_message(msg))
-
-    return result
-
-
-def convert_user_message(msg: UserMessage) -> dict[str, Any]:
-    """转换用户消息。"""
-    if isinstance(msg.content, str):
-        return {"role": "user", "content": msg.content}
-
-    # 多模态内容
-    content_blocks = []
-    for item in msg.content:
-        if isinstance(item, TextContent):
-            content_blocks.append({"type": "text", "text": item.text})
-        elif isinstance(item, ImageContent):
-            content_blocks.append(convert_image_content(item))
-
-    return {"role": "user", "content": content_blocks}
-
-
-def convert_image_content(item: ImageContent) -> dict[str, Any]:
-    """转换图像内容为 OpenAI 格式。"""
-    return {
-        "type": "image_url",
-        "image_url": {"url": f"data:{item.mime_type};base64,{item.data}"},
-    }
-
-
-def convert_assistant_message(msg: AssistantMessage) -> dict[str, Any]:
-    """转换助手消息。"""
-    content_blocks = []
-
-    for item in msg.content:
-        if isinstance(item, TextContent):
-            content_blocks.append({"type": "text", "text": item.text})
-        elif isinstance(item, ToolCall):
-            content_blocks.append(convert_tool_call(item))
-
-    return {"role": "assistant", "content": content_blocks}
-
-
-def convert_tool_call(item: ToolCall) -> dict[str, Any]:
-    """转换工具调用为 OpenAI 格式。"""
-    return {
-        "type": "function",
-        "function": {
-            "name": item.name,
-            "arguments": json.dumps(item.arguments) if item.arguments else "{}",
-        },
-    }
-
-
-def convert_tool_result_message(msg: ToolResultMessage) -> dict[str, Any]:
-    """转换工具结果消息。"""
-    content = msg.content[0].text if len(msg.content) == 1 else ""
-
-    if len(msg.content) > 1 or (
-        len(msg.content) == 1 and not isinstance(msg.content[0], TextContent)
-    ):
-        # 多模态或复杂内容
-        content_blocks = []
-        for item in msg.content:
-            if isinstance(item, TextContent):
-                content_blocks.append({"type": "text", "text": item.text})
-            elif isinstance(item, ImageContent):
-                content_blocks.append(convert_image_content(item))
-        content = content_blocks
-
-    return {
-        "role": "tool",
-        "tool_call_id": msg.tool_call_id,
-        "content": content,
-    }
-
-
-def convert_tools(tools: Sequence[Tool]) -> list[dict[str, Any]]:
-    """转换工具定义为 OpenAI 格式。"""
-    return [convert_tool(tool) for tool in tools]
-
-
-def convert_tool(tool: Tool) -> dict[str, Any]:
-    """转换单个工具定义。"""
-    schema = tool.parameters
-    if hasattr(tool.parameters, "model_json_schema"):
-        schema = tool.parameters.model_json_schema()
-    elif not isinstance(tool.parameters, dict):
-        schema = {"type": "object"}
-
-    return {
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": schema,
-        },
-    }

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import os
 
+from ai import StreamWatcher
 from ai.providers import KimiProvider
 from ai.types import Context, UserMessage
 
@@ -49,21 +50,24 @@ async def test_with_error_handling(description: str, context: Context) -> None:
         print(f"❌ 异常捕获: {type(e).__name__}: {e}")
 
     try:
-        # 方式 2: 使用 stream（流式处理）
-        print("\n方式 2: 使用 stream()")
+        # 方式 2: 使用 StreamWatcher（流式处理）
+        print("\n方式 2: 使用 StreamWatcher")
         stream = provider.stream(model=model, context=context)
 
-        error_occurred = False
-        async for event in stream:
-            if event.type == "error":
-                print(f"❌ 流错误: {event.error.error_message}")
-                error_occurred = True
-                break
-            elif event.type == "done":
-                print(f"✅ 流完成: {event.message.stop_reason}")
+        # 使用自定义回调处理错误
+        error_message = None
 
-        if not error_occurred:
-            message = await stream.result()
+        def on_error(msg: str) -> None:
+            nonlocal error_message
+            error_message = msg
+            print(f"❌ 流错误: {msg}")
+
+        message = await StreamWatcher(
+            on_error=on_error,
+            on_done=lambda _: None,  # 简化 done 输出
+        ).watch(stream)
+
+        if error_message is None:
             print(f"✅ 流结果: {message.stop_reason}")
 
     except Exception as e:
