@@ -34,6 +34,7 @@ from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 from ai import AssistantMessageEventStream
 from ai.types import (
     AssistantMessage,
+    AssistantMessageEvent,
     Context,
     ImageContent,
     Message,
@@ -43,6 +44,115 @@ from ai.types import (
     ToolCall,
     ToolResultMessage,
 )
+
+# ============================================================================
+# 自定义消息协议 - 对齐 pi-mono TypeScript 设计
+# ============================================================================
+
+
+class CustomMessage(Protocol):
+    """
+    自定义消息协议。
+
+    与 pi-mono 的 CustomAgentMessages 接口对齐。
+    应用层通过实现此协议来定义自定义消息类型，
+    用于在 Agent 消息历史中存储非 LLM 消息（如 UI 状态、进度通知等）。
+
+    协议要求：
+        - 必须有 role 属性（str 类型），用于 convert_to_llm 识别消息类型
+        - 可以是任何数据结构（dataclass、Pydantic model、dict 等）
+        - 完全由应用层定义，Agent 模块不预设任何具体类型
+
+    示例：
+        >>> from dataclasses import dataclass
+        >>>
+        >>> @dataclass
+        ... class BashExecutionMessage:
+        ...     role: str = "bash_execution"
+        ...     command: str = ""
+        ...     output: str = ""
+        ...
+        >>> # 在 convert_to_llm 中处理
+        >>> def my_convert(messages: list[AgentMessage]) -> list[Message]:
+        ...     for msg in messages:
+        ...         if getattr(msg, "role", None) == "bash_execution":
+        ...             # 转换为 LLM 能理解的格式
+        ...             return [UserMessage(content=[TextContent(text=msg.output)])]
+    """
+
+    @property
+    def role(self) -> str:
+        """
+        消息角色标识符。
+
+        用于 convert_to_llm 识别消息类型。
+        使用非标准 role 值（非 user/assistant/toolResult）表示自定义消息。
+
+        示例值：
+            - "bash_execution": Bash 命令执行结果
+            - "progress": 进度通知
+            - "notification": 系统通知
+        """
+        ...
+
+
+# ============================================================================
+# AgentMessage - 联合类型（支持自定义消息）
+# ============================================================================
+
+type AgentMessage = Message | CustomMessage
+"""
+Agent 消息类型 - 支持标准消息和自定义消息。
+
+与 pi-mono 的 AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages] 对齐。
+
+类型组成：
+    - Message: LLM 兼容的标准消息（user/assistant/toolResult）
+    - CustomMessage: 应用层定义的自定义消息（通过 Protocol 约束）
+
+约束：
+    - 自定义消息必须有 role 属性（str 类型）
+    - 标准 role: "user" | "assistant" | "toolResult"
+    - 非标准 role 被视为自定义消息，需要 convert_to_llm 处理
+"""
+
+
+# ============================================================================
+# 消息转换函数类型
+# ============================================================================
+
+type ConvertToLlm = Callable[[list[AgentMessage]], Awaitable[list[Message]]]
+"""
+消息转换函数类型。
+
+将 AgentMessage 列表（可能包含自定义消息）转换为 LLM 兼容的 Message 列表。
+
+契约：
+    - 必须处理所有可能的 AgentMessage 类型
+    - 标准消息（user/assistant/toolResult）直接通过
+    - 自定义消息必须转换或过滤
+    - 不得抛出异常，错误时返回安全回退值
+
+示例：
+    >>> async def convert_to_llm(messages: list[AgentMessage]) -> list[Message]:
+    ...     result = []
+    ...     for msg in messages:
+    ...         # 标准消息直接通过
+    ...         if isinstance(msg, Message) and msg.role in ("user", "assistant", "toolResult"):
+    ...             result.append(msg)
+    ...             continue
+    ...
+    ...         # 处理自定义消息
+    ...         if getattr(msg, "role", None) == "bash_execution":
+    ...             result.append(UserMessage(content=[TextContent(text=msg.output)]))
+    ...             continue
+    ...
+    ...         # 未知的自定义消息：跳过
+    ...         logger.warning(f"Unknown message role: {getattr(msg, 'role', 'unknown')}")
+    ...
+    ...     return result
+"""
+
 
 # ============================================================================
 # 基础类型
@@ -702,22 +812,6 @@ class AgentContext:
 
 
 # ============================================================================
-# AgentMessage - Agent 消息类型
-# ============================================================================
-
-type AgentMessage = Message
-"""Agent 消息类型
-
-继承自 ai.types.Message，包含：
-- UserMessage: 用户消息
-- AssistantMessage: 助手消息
-- ToolResultMessage: 工具执行结果
-
-这是 Agent 层的统一消息类型，会被转换为 LLM 兼容格式后发送
-"""
-
-
-# ============================================================================
 # AgentState - Agent 状态
 # ============================================================================
 
@@ -1035,23 +1129,31 @@ class AgentLoopConfig(SimpleStreamOptions):
     必须提供有效的 Model 实例，用于 LLM 调用
     """
 
-    convert_to_llm: Callable[[list[AgentMessage]], Awaitable[list[Message]]] | None = None
+    convert_to_llm: ConvertToLlm | None = None
     """消息转换函数
 
     将 AgentMessage[] 转换为 LLM 兼容的 Message[]。
 
     默认实现：
-        过滤出 role 为 user/assistant/toolResult 的消息
+        过滤出 role 为 user/assistant/toolResult 的消息，
+        忽略所有自定义消息。
 
     自定义场景：
+        - 处理自定义消息：将非标准消息转换为 LLM 可理解格式
         - 上下文压缩：截断过长的历史
         - 格式转换：修改消息格式
         - 附件处理：转换图像、文件等
 
     示例：
-        >>> async def custom_convert(messages):
-        ...     # 只保留最近 10 条消息
-        ...     return messages[-10:]
+        >>> async def custom_convert(messages: list[AgentMessage]) -> list[Message]:
+        ...     result = []
+        ...     for msg in messages:
+        ...         if isinstance(msg, Message) and msg.role in ("user", "assistant", "toolResult"):
+        ...             result.append(msg)
+        ...         elif getattr(msg, "role", None) == "bash_execution":
+        ...             # 转换自定义消息
+        ...             result.append(UserMessage(content=[TextContent(text=msg.output)]))
+        ...     return result
     """
 
     transform_context: Callable[[list[AgentMessage], Any], Awaitable[list[AgentMessage]]] | None = (
