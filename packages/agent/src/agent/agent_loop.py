@@ -532,12 +532,36 @@ async def _prepare_tool_call(
         }
 
     try:
-        # 执行 before_tool_call hook
+        # 参数验证（在 before_hook 之前）
+        from ai.validation import ToolValidationError, validate_tool_arguments
+        from ai.types import Tool as AiTool
+
+        ai_tool = AiTool(
+            name=tool.name,
+            description=tool.description,
+            parameters=tool.parameters,
+        )
+        tool_call_obj = ToolCall(
+            id=tool_call_id,
+            name=tool_name,
+            arguments=tool_args,
+        )
+
+        try:
+            validated_args = validate_tool_arguments(ai_tool, tool_call_obj)
+        except ToolValidationError as e:
+            return {
+                "kind": "immediate",
+                "result": _create_error_tool_result(str(e)),
+                "is_error": True,
+            }
+
+        # 执行 before_tool_call hook（使用验证后的参数）
         if config.before_tool_call:
             ctx = BeforeToolCallContext(
                 assistant_message=assistant_message,
-                tool_call=ToolCall(id=tool_call_id, name=tool_name, arguments=tool_args),
-                args=tool_args,
+                tool_call=ToolCall(id=tool_call_id, name=tool_name, arguments=validated_args),
+                args=validated_args,
                 context=current_context,
             )
             before_result = await config.before_tool_call(ctx, signal)
@@ -553,7 +577,7 @@ async def _prepare_tool_call(
             "kind": "prepared",
             "tool_call": tool_call,
             "tool": tool,
-            "args": tool_args,
+            "args": validated_args,
         }
     except Exception as e:
         return {

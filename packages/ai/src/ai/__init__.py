@@ -22,6 +22,13 @@ from ai.registry import (
 # 工具类
 from ai.utils import StreamWatcher
 
+# 验证工具
+from ai.validation import (
+    ToolValidationError,
+    validate_tool_arguments,
+    validate_tool_call,
+)
+
 # 流式事件
 from ai.stream import (
     # 事件类型
@@ -165,4 +172,8 @@ __all__ = [
     "clear_providers",
     # 工具类
     "StreamWatcher",
+    # 验证工具
+    "ToolValidationError",
+    "validate_tool_arguments",
+    "validate_tool_call",
 ]
