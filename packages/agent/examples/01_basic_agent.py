@@ -34,7 +34,7 @@ async def main():
     print("=" * 60)
 
     # 获取模型和 provider（启用 thinking 模式）
-    provider = KimiProvider()
+    provider = KimiProvider().with_thinking("high")
     model = provider.get_model()
 
     # 创建 stream_fn，用于调用 LLM
