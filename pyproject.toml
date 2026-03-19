@@ -12,6 +12,7 @@ dependencies = [
 members = [
     "packages/ai",
     "packages/agent",
+    "packages/coding-agent"
 ]
 
 [tool.uv]
