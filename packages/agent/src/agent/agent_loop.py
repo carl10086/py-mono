@@ -35,6 +35,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ai.stream import EventStream
 from ai.types import (
     AssistantMessage,
     Context,
@@ -64,6 +65,131 @@ from agent.types import (
 )
 
 AgentEventSink = Callable[[AgentEvent], Awaitable[None] | None]
+
+
+class AgentEventStream(EventStream[AgentEvent, list[AgentMessage]]):
+    """Agent 事件流 - EventStream API 的核心抽象
+
+    用于实时消费 Agent 事件流，并在完成时获取所有新产生的消息。
+    对标 pi-mono 的 agentLoop/agentLoopContinue 返回类型。
+
+    Contract:
+    - 流以 agent_start 开始
+    - 正常结束：agent_end 事件（包含所有新消息）
+    - result() 返回 list[AgentMessage]（本次产生的新消息）
+    - 支持 async for 迭代所有 AgentEvent
+
+    示例：
+        >>> stream = agent_loop(prompts, context, config)
+        >>> async for event in stream:
+        ...     if event.get("type") == "message_update":
+        ...         print(event.get("message"))
+        >>> messages = await stream.result()
+    """
+
+    def __init__(self) -> None:
+        """初始化 Agent 事件流"""
+
+        def is_complete(event: AgentEvent) -> bool:
+            return event.get("type") == "agent_end"
+
+        def extract_result(event: AgentEvent) -> list[AgentMessage]:
+            return event.get("messages", [])
+
+        super().__init__(is_complete, extract_result)
+
+
+def agent_loop(
+    prompts: list[AgentMessage],
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: Any = None,
+    stream_fn: Any = None,
+) -> AgentEventStream:
+    """启动新的 Agent Loop（EventStream API）
+
+    对标 pi-mono 的 agentLoop 函数。返回 AgentEventStream，
+    可通过 async for 消费事件，或通过 result() 获取最终结果。
+
+    参数：
+        prompts: 初始提示消息列表
+        context: Agent 上下文
+        config: Loop 配置
+        signal: 取消信号
+        stream_fn: 流式调用函数
+
+    返回：
+        AgentEventStream: 可异步迭代的事件流
+
+    示例：
+        >>> stream = agent_loop([user_msg], context, config)
+        >>> async for event in stream:
+        ...     print(event.get("type"))
+        >>> messages = await stream.result()
+    """
+    stream = AgentEventStream()
+
+    async def run() -> None:
+        try:
+            messages = await run_agent_loop(
+                prompts, context, config, _stream_to_event_sink(stream), signal, stream_fn
+            )
+            stream.end(messages)
+        except Exception:
+            stream.end([])
+
+    import asyncio
+
+    asyncio.create_task(run())
+    return stream
+
+
+def agent_loop_continue(
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: Any = None,
+    stream_fn: Any = None,
+) -> AgentEventStream:
+    """从当前上下文继续 Agent Loop（EventStream API）
+
+    对标 pi-mono 的 agentLoopContinue 函数。
+
+    参数：
+        context: Agent 上下文（最后消息必须是 user 或 toolResult）
+        config: Loop 配置
+        signal: 取消信号
+        stream_fn: 流式调用函数
+
+    返回：
+        AgentEventStream: 可异步迭代的事件流
+    """
+    stream = AgentEventStream()
+
+    async def run() -> None:
+        try:
+            messages = await run_agent_loop_continue(
+                context, config, _stream_to_event_sink(stream), signal, stream_fn
+            )
+            stream.end(messages)
+        except Exception:
+            stream.end([])
+
+    import asyncio
+
+    asyncio.create_task(run())
+    return stream
+
+
+def _stream_to_event_sink(stream: AgentEventStream) -> AgentEventSink:
+    """将 EventStream 转换为 AgentEventSink
+
+    用于将事件推送到 EventStream。
+    """
+
+    def sink(event: AgentEvent) -> None:
+        stream.push(event)
+
+    return sink
 
 
 async def run_agent_loop(

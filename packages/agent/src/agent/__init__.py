@@ -13,7 +13,13 @@ from __future__ import annotations
 from agent.agent import Agent, AgentOptions
 
 # Agent Loop
-from agent.agent_loop import run_agent_loop, run_agent_loop_continue
+from agent.agent_loop import (
+    AgentEventStream,
+    agent_loop,
+    agent_loop_continue,
+    run_agent_loop,
+    run_agent_loop_continue,
+)
 
 # 类型定义
 from agent.types import (
@@ -52,7 +58,11 @@ __all__ = [
     # Agent 类
     "Agent",
     "AgentOptions",
-    # Loop 函数
+    # EventStream API
+    "AgentEventStream",
+    "agent_loop",
+    "agent_loop_continue",
+    # Promise API (Loop 函数)
     "run_agent_loop",
     "run_agent_loop_continue",
     # 核心类型
