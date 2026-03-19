@@ -314,7 +314,17 @@ async def _stream_assistant_response(
                 added_partial = True
                 await _emit(emit, MessageStartEvent(type="message_start", message=partial_message))
 
-        elif event_type in ("text_delta", "thinking_delta"):
+        elif event_type in (
+            "text_start",
+            "text_delta",
+            "text_end",
+            "thinking_start",
+            "thinking_delta",
+            "thinking_end",
+            "toolcall_start",
+            "toolcall_delta",
+            "toolcall_end",
+        ):
             if partial_message:
                 partial_message = getattr(event, "partial", partial_message)
                 context.messages[-1] = partial_message
