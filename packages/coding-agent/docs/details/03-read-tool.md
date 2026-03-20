@@ -29,15 +29,15 @@ sequenceDiagram
     participant FS as FileSystem
 
     AI->>RT: execute(path)
-    
+
     RT->>FS: 读取文件
     FS-->>RT: raw_content
-    
+
     Note over RT: 移除 BOM
     Note over RT: 规范化换行符
-    
+
     Note over RT: 超过限制?<br/>截断并保存临时文件
-    
+
     RT-->>AI: AgentToolResult(content, details)
 ```
 
@@ -59,7 +59,15 @@ sequenceDiagram
 | 无权限读取 | 返回 error result |
 | 取消信号 | raise CancelledError |
 
-## 3. 使用示例
+## 3. 与 pi-mono 差异
+
+| 方面 | pi-mono (TS) | py-mono (Python) |
+|------|--------------|------------------|
+| 错误处理 | `reject(Error)` | `return AgentToolResult(is_error=True)` |
+| 取消处理 | `reject(Error)` | `raise CancelledError` |
+| 实现模式 | Promise + 事件监听 | 类 + Protocol |
+
+## 4. 使用示例
 
 ```python
 from coding_agent.tools.read import create_read_tool
@@ -73,16 +81,8 @@ print(result.content[0].text)
 print(result.details)  # 如果被截断
 ```
 
-## 4. 与 pi-mono 差异
-
-| 方面 | pi-mono (TS) | py-mono (Python) |
-|------|--------------|------------------|
-| 错误处理 | `reject(Error)` | `return AgentToolResult(is_error=True)` |
-| 取消处理 | `reject(Error)` | `raise CancelledError` |
-| 实现模式 | Promise + 事件监听 | 类 + Protocol |
-
 ## 5. 扩展阅读
 
-- [Write 工具](./02-write-tool.md) - 文件写入工具
-- [Edit 工具](./01-edit-tool.md) - 文件编辑工具
-- [Bash 工具](./03-bash-tool.md) - 命令执行工具
+- [Path Utils](./01-path-utils.md) - 路径处理工具
+- [Truncate](./02-truncate.md) - 输出截断工具
+- [Write 工具](./04-write-tool.md) - 文件写入工具

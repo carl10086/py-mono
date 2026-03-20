@@ -88,14 +88,20 @@ def estimate_context_tokens(entries: list[SessionEntry]) -> int:
     for entry in entries:
         if entry.type == "message":
             msg = getattr(entry, "message", None)
-            if msg and hasattr(msg, "content"):
+            if msg is None:
+                continue
+            if isinstance(msg, dict):
+                content = msg.get("content")
+            elif hasattr(msg, "content"):
                 content = msg.content
-                if isinstance(content, str):
-                    total += estimate_tokens(content)
-                elif isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and "text" in block:
-                            total += estimate_tokens(block["text"])
+            else:
+                continue
+            if isinstance(content, str):
+                total += estimate_tokens(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and "text" in block:
+                        total += estimate_tokens(block["text"])
     return total
 
 
@@ -243,21 +249,25 @@ def prepare_compaction(
     tokens_before = 0
     first_kept_entry_id: str | None = None
 
+    def _get_content(msg: Any) -> Any:
+        """从 message 中获取 content"""
+        if isinstance(msg, dict):
+            return msg.get("content")
+        return getattr(msg, "content", None)
+
     # 收集消息用于摘要
     for entry in entries:
         if entry.type == "message":
             msg = getattr(entry, "message", None)
             if msg:
                 messages.append(msg)
-                # 估算 token
-                if hasattr(msg, "content"):
-                    content = msg.content
-                    if isinstance(content, str):
-                        tokens_before += estimate_tokens(content)
-                    elif isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and "text" in block:
-                                tokens_before += estimate_tokens(block["text"])
+                content = _get_content(msg)
+                if isinstance(content, str):
+                    tokens_before += estimate_tokens(content)
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and "text" in block:
+                            tokens_before += estimate_tokens(block["text"])
 
     # 提取文件操作
     file_ops = extract_file_operations(entries)
@@ -267,8 +277,8 @@ def prepare_compaction(
     for entry in reversed(entries):
         if entry.type == "message":
             msg = getattr(entry, "message", None)
-            if msg and hasattr(msg, "content"):
-                content = msg.content
+            content = _get_content(msg) if msg else None
+            if content:
                 msg_tokens = 0
                 if isinstance(content, str):
                     msg_tokens = estimate_tokens(content)
