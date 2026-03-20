@@ -130,6 +130,11 @@ class AgentSession:
         return self._session_manager
 
     @property
+    def settings_manager(self) -> SettingsManager | None:
+        """获取设置管理器"""
+        return self._settings_manager
+
+    @property
     def model(self) -> Model | None:
         """获取当前模型"""
         return self._agent.state.model if self._agent else None
