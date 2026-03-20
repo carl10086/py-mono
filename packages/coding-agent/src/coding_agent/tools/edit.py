@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -147,6 +148,18 @@ class _EditTool:
             "required": ["path", "oldText", "newText"],
         }
 
+    def _check_cancelled(self, signal: Any | None) -> None:
+        """检查是否已取消，如已取消则引发 CancelledError."""
+        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
+            raise asyncio.CancelledError("操作已取消")
+
+    def _error_result(self, message: str) -> AgentToolResult[EditToolDetails]:
+        """返回错误结果."""
+        return AgentToolResult(
+            content=[TextContent(text=f"编辑失败：{message}")],
+            details=None,
+        )
+
     async def execute(
         self,
         tool_call_id: str,
@@ -154,7 +167,7 @@ class _EditTool:
         signal: Any = None,
         on_update: Any = None,
     ) -> AgentToolResult[EditToolDetails]:
-        """执行编辑操作。
+        """执行编辑操作.
 
         Args:
             tool_call_id: 工具调用ID。
@@ -163,71 +176,57 @@ class _EditTool:
             on_update: 进度更新回调（可选）。
 
         Returns:
-            工具执行结果。
+            工具执行结果。错误时返回 is_error=True 的结果，不抛出异常。
 
         """
         path = params.get("path", "")
         old_text = params.get("oldText", "")
         new_text = params.get("newText", "")
 
-        # 解析绝对路径
         absolute_path = resolve_to_cwd(path, self._cwd)
 
-        # 检查是否已取消
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        self._check_cancelled(signal)
 
-        # 检查文件是否存在
         try:
             await self._operations.access(absolute_path)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"文件不存在: {path}") from e
+        except (FileNotFoundError, PermissionError):
+            return self._error_result(f"文件不存在或无权限：{path}")
 
-        # 再次检查取消状态
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        self._check_cancelled(signal)
 
-        # 读取文件
-        buffer = await self._operations.read_file(absolute_path)
-        raw_content = buffer.decode("utf-8")
+        try:
+            buffer = await self._operations.read_file(absolute_path)
+            raw_content = buffer.decode("utf-8")
+        except OSError as e:
+            return self._error_result(f"读取文件失败: {e}")
 
-        # 再次检查取消状态
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        self._check_cancelled(signal)
 
-        # 移除BOM（LLM不会在oldText中包含不可见的BOM）
         bom, content = strip_bom(raw_content)
-
-        # 检测并标准化换行符
         original_ending = detect_line_ending(content)
         normalized_content = normalize_to_lf(content)
         normalized_old_text = normalize_to_lf(old_text)
         normalized_new_text = normalize_to_lf(new_text)
 
-        # 使用模糊匹配查找旧文本（先尝试精确匹配，再尝试模糊匹配）
         match_result = fuzzy_find_text(normalized_content, normalized_old_text)
 
         if not match_result.found:
-            raise ValueError(
+            return self._error_result(
                 f"无法在 {path} 中找到精确的文本。旧文本必须完全匹配，包括所有空白字符和换行符。"
             )
 
-        # 统计匹配次数
         fuzzy_content = normalize_for_fuzzy_match(normalized_content)
         fuzzy_old_text_normalized = normalize_for_fuzzy_match(normalized_old_text)
         occurrences = fuzzy_content.count(fuzzy_old_text_normalized)
 
         if occurrences > 1:
-            raise ValueError(
+            return self._error_result(
                 f"在 {path} 中找到了 {occurrences} 处匹配的文本。"
                 f"文本必须是唯一的。请提供更多上下文以使其唯一。"
             )
 
-        # 再次检查取消状态
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        self._check_cancelled(signal)
 
-        # 执行替换
         base_content = match_result.content_for_replacement
         new_content = (
             base_content[: match_result.index]
@@ -235,22 +234,20 @@ class _EditTool:
             + base_content[match_result.index + match_result.match_length :]
         )
 
-        # 验证替换确实改变了内容
         if base_content == new_content:
-            raise ValueError(
+            return self._error_result(
                 f"未对 {path} 进行任何更改。替换产生了相同的内容。"
                 f"这可能表示特殊字符存在问题或文本不如预期存在。"
             )
 
-        # 恢复原始换行符和BOM
-        final_content = bom + restore_line_endings(new_content, original_ending)
-        await self._operations.write_file(absolute_path, final_content)
+        try:
+            final_content = bom + restore_line_endings(new_content, original_ending)
+            await self._operations.write_file(absolute_path, final_content)
+        except OSError as e:
+            return self._error_result(f"写入文件失败: {e}")
 
-        # 再次检查取消状态
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        self._check_cancelled(signal)
 
-        # 生成差异
         diff_result = generate_diff_string(base_content, new_content)
 
         return AgentToolResult(

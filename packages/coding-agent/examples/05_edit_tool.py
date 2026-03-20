@@ -132,21 +132,19 @@ async def test_unique_text_required() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = os.path.join(tmpdir, "test.txt")
-        # 重复的文本
         with open(file_path, "w") as f:
             f.write("repeat\nrepeat\nrepeat")
 
         tool = create_edit_tool(tmpdir)
 
-        try:
-            await tool.execute(
-                "test_call_5",
-                {"path": "test.txt", "oldText": "repeat", "newText": "changed"},
-            )
-            assert False, "应该抛出异常"
-        except ValueError as e:
-            assert "唯一的" in str(e) or "unique" in str(e).lower()
-            print("✓ 正确检测到多个匹配")
+        result = await tool.execute(
+            "test_call_5",
+            {"path": "test.txt", "oldText": "repeat", "newText": "changed"},
+        )
+
+        assert "唯一的" in result.content[0].text or "unique" in result.content[0].text.lower()
+        assert "编辑失败" in result.content[0].text
+        print("✓ 正确检测到多个匹配")
 
 
 async def test_line_ending_preservation() -> None:

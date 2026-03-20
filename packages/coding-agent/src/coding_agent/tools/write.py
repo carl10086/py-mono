@@ -107,6 +107,24 @@ class _WriteTool:
             "required": ["path", "content"],
         }
 
+    def _is_cancelled(self, signal: Any | None) -> bool:
+        """检查是否已取消."""
+        return signal is not None and hasattr(signal, "cancelled") and signal.cancelled
+
+    def _cancelled_result(self, path: str) -> AgentToolResult[None]:
+        """返回取消状态的错误结果."""
+        return AgentToolResult(
+            content=[TextContent(text=f"操作已取消：{path}")],
+            is_error=True,
+        )
+
+    def _error_result(self, message: str) -> AgentToolResult[None]:
+        """返回错误结果."""
+        return AgentToolResult(
+            content=[TextContent(text=f"写入失败：{message}")],
+            is_error=True,
+        )
+
     async def execute(
         self,
         tool_call_id: str,
@@ -114,7 +132,7 @@ class _WriteTool:
         signal: Any = None,
         on_update: Any = None,
     ) -> AgentToolResult[None]:
-        """执行写入操作。
+        """执行写入操作.
 
         Args:
             tool_call_id: 工具调用ID。
@@ -123,36 +141,36 @@ class _WriteTool:
             on_update: 进度更新回调（可选）。
 
         Returns:
-            工具执行结果。
+            工具执行结果。错误时返回 is_error=True 的结果，不抛出异常。
 
         """
         path = params.get("path", "")
         content = params.get("content", "")
 
-        # 解析绝对路径
         absolute_path = resolve_to_cwd(path, self._cwd)
         dir_path = os.path.dirname(absolute_path)
 
-        # 检查是否已取消
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        if self._is_cancelled(signal):
+            return self._cancelled_result(path)
 
-        # 创建父目录
-        await self._operations.mkdir(dir_path)
+        try:
+            await self._operations.mkdir(dir_path)
+        except OSError as e:
+            return self._error_result(f"创建目录失败: {e}")
 
-        # 再次检查取消状态
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        if self._is_cancelled(signal):
+            return self._cancelled_result(path)
 
-        # 写入文件
-        await self._operations.write_file(absolute_path, content)
+        try:
+            await self._operations.write_file(absolute_path, content)
+        except OSError as e:
+            return self._error_result(f"写入文件失败: {e}")
 
-        # 检查是否已取消
-        if signal is not None and hasattr(signal, "cancelled") and signal.cancelled:
-            raise RuntimeError("操作已取消")
+        if self._is_cancelled(signal):
+            return self._cancelled_result(path)
 
         return AgentToolResult(
-            content=[TextContent(type="text", text=f"成功写入 {len(content)} 字节到 {path}")],
+            content=[TextContent(text=f"成功写入 {len(content)} 字节到 {path}")],
             details=None,
         )
 

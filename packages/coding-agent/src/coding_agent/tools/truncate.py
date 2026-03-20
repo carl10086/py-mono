@@ -11,6 +11,7 @@ from typing import Literal
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "DEFAULT_MAX_LINES",
+    "GREP_MAX_LINE_LENGTH",
     "TruncationResult",
     "format_size",
     "truncate_head",
@@ -20,6 +21,7 @@ __all__ = [
 
 DEFAULT_MAX_LINES = 2000
 DEFAULT_MAX_BYTES = 50 * 1024
+GREP_MAX_LINE_LENGTH = 500  # Max chars per grep match line
 
 
 @dataclass
