@@ -5,7 +5,12 @@
 展示：
 1. 使用内存 SessionManager
 2. 集成 tools (write, bash, read, edit)
-3. 让 Agent 在指定目录下创建 hello world Python 文件并运行
+3. 连续对话：Agent 创建并修改 hello.py 文件
+
+任务：
+1. 创建 hello.py，输出 'Hello, World!'
+2. 修改 hello.py，添加打印当前时间
+3. 修改 hello.py，添加查询最高 CPU 进程的函数
 
 运行方式：
     cd packages/coding-agent && uv run python examples/03_agent_session_with_tools.py
@@ -93,7 +98,7 @@ async def main() -> int:
     session.subscribe(streaming_printer())
 
     print("\n" + "-" * 60)
-    print("让 Agent 创建 hello.py 并运行...")
+    print("任务 1: 创建 hello.py 并运行")
     print("-" * 60 + "\n")
 
     await session.prompt(
@@ -102,7 +107,26 @@ async def main() -> int:
     )
 
     print("\n" + "-" * 60)
-    print("验证文件是否创建成功...")
+    print("任务 2: 修改 hello.py，同时输出当前时间")
+    print("-" * 60 + "\n")
+
+    await session.prompt(
+        f"修改 {TARGET_CWD}/hello.py，在 'Hello, World!' 之后，"
+        "添加一行代码打印当前时间（使用 datetime 模块），然后运行它。"
+    )
+
+    print("\n" + "-" * 60)
+    print("任务 3: 在 hello.py 中添加查询最高 CPU 进程的功能")
+    print("-" * 60 + "\n")
+
+    await session.prompt(
+        f"修改 {TARGET_CWD}/hello.py，在文件末尾添加一个函数 get_highest_cpu_process()，"
+        "使用 subprocess 执行 'ps aux' 命令，按 CPU 使用率排序，返回 CPU 最高的进程名称和 PID。"
+        "然后在主程序中调用这个函数并打印结果。"
+    )
+
+    print("\n" + "-" * 60)
+    print("验证最终 hello.py 内容...")
     print("-" * 60)
 
     hello_path = os.path.join(TARGET_CWD, "hello.py")
