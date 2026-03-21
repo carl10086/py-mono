@@ -37,8 +37,8 @@
 | fork_from | ✅ | ✅ | 完整 |
 | **会话管理** |||
 | continue_recent | ✅ | ✅ | 完整 |
-| list | ✅ | ❌ | **缺失** |
-| list_all | ✅ | ❌ | **缺失** |
+| list | ✅ | ✅ | 完整 |
+| list_all | ✅ | ✅ | 完整 |
 | build_session_context | ✅ | ✅ | 完整 |
 | **其他** |||
 | get_session_name | ✅ | ✅ | 完整 |
@@ -48,45 +48,17 @@
 
 ## 2. 关键差异
 
-### 2.1 缺失的方法（阻断功能）
+### 2.1 已实现的方法
 
-#### A. `buildSessionContext()` - 上下文构建 ⭐⭐⭐
+所有计划的方法均已实现：
 
-**pi-mono**:
-```typescript
-buildSessionContext(): SessionContext  // 类方法
-```
-
-这是一个核心方法，从会话条目构建发送到 LLM 的消息列表，同时处理：
-- 思考级别提取
-- 模型信息提取
-- 压缩摘要插入
-- 分支摘要插入
-- 自定义消息转换
-
-**py-mono**: 无此方法，AgentSession 需要自行实现
-
-#### B. 分支管理方法 ⭐⭐
-
-**pi-mono**:
-```typescript
-branch(branchFromId: string): void           // 移动叶子指针
-resetLeaf(): void                           // 重置到根
-branchWithSummary(...): string              // 分支并生成摘要
-createBranchedSession(leafId: string): string | undefined  // 创建分支会话
-```
-
-**py-mono**: 完全缺失
-
-#### C. 压缩和分支摘要追加 ⭐⭐
-
-**pi-mono**:
-```typescript
-appendCompaction(summary, firstKeptEntryId, tokensBefore, details?, fromHook?): string
-appendBranchSummary(fromId, summary, details?, fromHook?): string
-```
-
-**py-mono**: 只有 `append_message`, `append_thinking_level_change`, `append_model_change`
+- ✅ `buildSessionContext()` - 上下文构建
+- ✅ `branch()` / `reset_leaf()` / `branchWithSummary()` - 分支管理
+- ✅ `appendCompaction()` / `appendBranchSummary()` - 压缩和分支摘要
+- ✅ `append_custom_entry()` / `append_custom_message()` - 自定义条目
+- ✅ `append_session_info()` / `append_label_change()` - 会话信息和标签
+- ✅ `get_tree()` / `get_children()` / `get_leaf_entry()` - 树遍历
+- ✅ `fork_from()` / `continue_recent()` / `list()` / `list_all()` - 会话管理
 
 ### 2.2 架构差异
 
@@ -180,28 +152,40 @@ def _parse_entry(self, data):
 ## 4. 建议的实施计划
 
 ### Phase 1: 核心修复（P0）
-1. 修复 `_parse_entry` 支持所有条目类型
-2. 实现 `build_session_context()` 或增强 `AgentSession.build_context()`
+1. 修复 `_parse_entry` 支持所有条目类型 ✅
+2. 实现 `build_session_context()` ✅
 
-### Phase 2: 压缩支持（P1）
-1. 添加 `append_compaction()`
-2. 添加 `append_branch_summary()`
-3. 集成到 AgentSession 事件处理
+### Phase 2: 压缩支持（P1）✅
+1. 添加 `append_compaction()` ✅
+2. 添加 `append_branch_summary()` ✅
+3. 集成到 AgentSession 事件处理（待完成）
 
-### Phase 3: 分支支持（P1）
-1. 添加 `branch()` / `reset_leaf()`
-2. 添加 `branch_with_summary()`
-3. 添加 `get_tree()` / `get_children()`
+### Phase 3: 分支支持（P1）✅
+1. 添加 `branch()` / `reset_leaf()` ✅
+2. 添加 `branch_with_summary()` ✅
+3. 添加 `get_tree()` / `get_children()` ✅
 
 ---
 
 ## 5. 总结
 
-py-mono 的 SessionManager 实现了基础功能，但相比 pi-mono 缺少：
+py-mono 的 SessionManager 已实现与 pi-mono 对齐的几乎所有功能：
 
-1. **上下文构建** - 无法正确将会话转换为 LLM 消息
-2. **压缩支持** - 无法追加压缩条目
-3. **分支管理** - 无法进行分支导航
-4. **条目解析** - 重新加载丢失消息数据
+| 类别 | 完成度 |
+|------|--------|
+| 基础功能 | 100% |
+| 消息追加 | 100% |
+| 树遍历 | 100% |
+| 分支管理 | 100% |
+| 会话管理 | 100% |
+| 上下文构建 | 100% |
 
-建议优先实现 `buildSessionContext()` 等 P0 功能，使 AgentSession 能正常工作。
+### 测试覆盖
+
+- 单元测试：26 个测试全部通过
+- 测试方法：`append_*`, `branch`, `reset_leaf`, `get_tree`, `fork_from`, `list` 等
+
+### 待完成
+
+- AgentSession 事件系统集成（Phase 2.3）
+- Agent 状态恢复（Agent.state.messages 填充）

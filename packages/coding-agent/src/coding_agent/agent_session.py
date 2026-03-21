@@ -202,6 +202,45 @@ class AgentSession:
         """获取工作目录"""
         return self._cwd
 
+    async def switch_session(self, session_path: str) -> None:
+        """切换到指定会话
+
+        实现"继续上次对话"功能：
+        1. 中断当前 agent
+        2. 加载指定会话文件
+        3. 重建上下文
+        4. 恢复 agent 状态
+
+        Args:
+            session_path: 会话文件路径
+        """
+        if not self._session_manager:
+            raise RuntimeError("No session manager configured")
+
+        if not self._agent:
+            raise RuntimeError("Agent not initialized")
+
+        self._agent.abort()
+        await self._agent.wait_for_idle()
+
+        self._session_manager.set_session_file(session_path)
+
+        context = self._session_manager.build_session_context()
+
+        self._agent.replace_messages(context.messages)
+
+        if context.model:
+            try:
+                model = self._provider.get_model(context.model.get("model_id"))
+                self._agent.set_model(model)
+            except Exception:
+                pass
+
+        if context.thinking_level and context.thinking_level != "off":
+            self._agent.set_thinking_level(context.thinking_level)
+
+        self._turn_index = 0
+
 
 def create_agent_session(
     cwd: str,
