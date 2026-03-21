@@ -10,11 +10,10 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-from agent import Agent, AgentOptions, AgentTool
+from agent import Agent, AgentEvent, AgentOptions, AgentTool
 from ai.providers import KimiProvider
 
 from coding_agent.session.manager import SessionManager
@@ -61,7 +60,7 @@ class AgentSession:
         self._settings_manager = config.settings_manager
 
         self._agent: Agent | None = None
-        self._event_listeners: list[Callable[[dict[str, Any]], None]] = []
+        self._event_listeners: list[Callable[[AgentEvent], None]] = []
         self._turn_index = 0
 
         self._init_agent()
@@ -85,7 +84,7 @@ class AgentSession:
 
         self._agent.subscribe(self._on_agent_event)
 
-    def _on_agent_event(self, event: dict[str, Any]) -> None:
+    def _on_agent_event(self, event: AgentEvent) -> None:
         """Agent 事件处理器 - 持久化消息
 
         Args:
@@ -122,12 +121,19 @@ class AgentSession:
     @property
     def agent(self) -> Agent:
         """获取底层 Agent 实例"""
+        if self._agent is None:
+            raise RuntimeError("Agent not initialized")
         return self._agent
 
     @property
     def session_manager(self) -> SessionManager | None:
         """获取会话管理器"""
         return self._session_manager
+
+    @property
+    def settings_manager(self) -> SettingsManager | None:
+        """获取设置管理器"""
+        return self._settings_manager
 
     @property
     def model(self) -> Model | None:
@@ -168,7 +174,7 @@ class AgentSession:
             return []
 
         entries = self._session_manager.get_branch()
-        messages = []
+        messages: list[Any] = []
         for entry in entries:
             if entry.type == "message":
                 msg = getattr(entry, "message", None)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-示例 19: AgentSession E2E 测试 - 消息持久化
+示例 01: AgentSession E2E 测试 - 消息持久化
 
 验证：
 1. AgentSession 正确集成 SessionManager
@@ -8,7 +8,7 @@
 3. 可以从文件加载历史继续对话
 
 运行方式：
-    cd packages/coding-agent && uv run python examples/19_agent_session.py
+    cd packages/coding-agent && uv run python examples/01_agent_session.py
 """
 
 from __future__ import annotations
@@ -19,11 +19,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-
-root_dir = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(root_dir / "ai" / "src"))
-sys.path.insert(0, str(root_dir / "agent" / "src"))
-sys.path.insert(0, str(root_dir / "coding-agent" / "src"))
 
 from ai.providers import KimiProvider
 from coding_agent.agent_session import create_agent_session

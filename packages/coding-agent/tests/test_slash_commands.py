@@ -8,9 +8,9 @@ from coding_agent.slash_commands import (
 
 
 def test_parse_slash_command():
-    assert parse_slash_command("/help") == ("/help", "")
-    assert parse_slash_command("/model gpt-4") == ("/model", "gpt-4")
-    assert parse_slash_command("/compact") == ("/compact", "")
+    assert parse_slash_command("/help") == ("help", [])
+    assert parse_slash_command("/model gpt-4") == ("model", ["gpt-4"])
+    assert parse_slash_command("/compact") == ("compact", [])
     assert parse_slash_command("not a command") is None
 
 

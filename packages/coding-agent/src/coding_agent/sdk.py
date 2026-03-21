@@ -180,16 +180,13 @@ def create_agent_session(
         else:
             model_fallback_message = "没有可用的模型。请配置 API 密钥或使用 /login 命令。"
 
-    # 创建 Agent 占位对象（简化版）
-    agent = _create_placeholder_agent(model, tools)
-
     # 创建 AgentSession 配置
+    # 注意：AgentSession 内部会创建自己的 Agent，这里只需要传递正确的配置
     config = AgentSessionConfig(
-        agent=agent,
+        cwd=cwd,
         session_manager=session_manager,
         settings_manager=settings_manager,
-        cwd=cwd,
-        custom_tools=opts.tools,
+        tools=tools,
     )
 
     # 创建会话

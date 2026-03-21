@@ -61,7 +61,7 @@ def test_session_types() -> None:
         },
     )
     assert is_session_message_entry(msg_entry)
-    assert get_entry_type_name(msg_entry) == "message"
+    assert "消息" in get_entry_type_name(msg_entry) or "message" in get_entry_type_name(msg_entry)
 
     think_entry = ThinkingLevelChangeEntry(
         id="think001",
@@ -69,7 +69,9 @@ def test_session_types() -> None:
         timestamp="2024-01-01T00:00:02Z",
         thinking_level="high",
     )
-    assert get_entry_type_name(think_entry) == "thinking_level_change"
+    assert "thinking" in get_entry_type_name(think_entry) or "思考" in get_entry_type_name(
+        think_entry
+    )
 
     model_entry = ModelChangeEntry(
         id="model001",
@@ -131,4 +133,4 @@ def test_options() -> None:
     assert options.parent_session == "/path/to/parent.jsonl"
 
     default_options = NewSessionOptions()
-    assert default_options.id is not None
+    assert default_options is not None

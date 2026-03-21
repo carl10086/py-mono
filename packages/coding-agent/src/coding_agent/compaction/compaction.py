@@ -7,16 +7,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from coding_agent.compaction.utils import (
     FileOperations,
     compute_file_lists,
     create_file_ops,
     extract_file_ops_from_message,
-    format_file_operations,
 )
-from coding_agent.messages import create_compaction_summary_message
 from coding_agent.session.types import CompactionEntry, SessionEntry
 
 
@@ -99,8 +97,8 @@ def estimate_context_tokens(entries: list[SessionEntry]) -> int:
             if isinstance(content, str):
                 total += estimate_tokens(content)
             elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and "text" in block:
+                for block in cast(list[dict[str, Any]], content):
+                    if "text" in block:
                         total += estimate_tokens(block["text"])
     return total
 
@@ -168,16 +166,15 @@ def extract_file_operations(
             and not getattr(prev_entry, "from_hook", False)
             and prev_entry.details
         ):
-            details = prev_entry.details
-            if isinstance(details, dict):
-                read_files = details.get("readFiles", [])
-                modified_files = details.get("modifiedFiles", [])
-                if isinstance(read_files, list):
-                    for f in read_files:
-                        file_ops.read.add(f)
-                if isinstance(modified_files, list):
-                    for f in modified_files:
-                        file_ops.edited.add(f)
+            details = cast(dict[str, Any], prev_entry.details)
+            read_files = details.get("readFiles", [])
+            modified_files = details.get("modifiedFiles", [])
+            if isinstance(read_files, list):
+                for f in cast(list[str], read_files):
+                    file_ops.read.add(f)
+            if isinstance(modified_files, list):
+                for f in cast(list[str], modified_files):
+                    file_ops.edited.add(f)
 
     # 从消息中提取工具调用
     for entry in entries:
@@ -243,8 +240,6 @@ def prepare_compaction(
     Returns:
         压缩准备结果
     """
-    from coding_agent.messages import convert_to_llm
-
     messages: list[Any] = []
     tokens_before = 0
     first_kept_entry_id: str | None = None
@@ -265,8 +260,8 @@ def prepare_compaction(
                 if isinstance(content, str):
                     tokens_before += estimate_tokens(content)
                 elif isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and "text" in block:
+                    for block in cast(list[dict[str, Any]], content):
+                        if "text" in block:
                             tokens_before += estimate_tokens(block["text"])
 
     # 提取文件操作
@@ -285,8 +280,7 @@ def prepare_compaction(
                 elif isinstance(content, list):
                     msg_tokens = sum(
                         estimate_tokens(block.get("text", ""))
-                        for block in content
-                        if isinstance(block, dict)
+                        for block in cast(list[dict[str, Any]], content)
                     )
                 cumulative_tokens += msg_tokens
                 if cumulative_tokens > settings.keep_recent_tokens:

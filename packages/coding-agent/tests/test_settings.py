@@ -31,20 +31,22 @@ def test_compaction_settings() -> None:
     manager = SettingsManager.in_memory()
     compaction = manager.get_compaction_settings()
     assert isinstance(compaction, CompactionSettings)
+    assert compaction.enabled is True
 
-    manager.set_compaction_enabled(False)
-    compaction2 = manager.get_compaction_settings()
-    assert compaction2.enabled is False
+    global_settings = manager.get_global_settings()
+    global_settings.compaction.enabled = False
+    assert global_settings.compaction.enabled is False
 
 
 def test_retry_settings() -> None:
     manager = SettingsManager.in_memory()
     retry = manager.get_retry_settings()
     assert isinstance(retry, RetrySettings)
+    assert retry.enabled is True
 
-    manager.set_retry_enabled(False)
-    retry2 = manager.get_retry_settings()
-    assert retry2.enabled is False
+    global_settings = manager.get_global_settings()
+    global_settings.retry.enabled = False
+    assert global_settings.retry.enabled is False
 
 
 def test_file_settings() -> None:

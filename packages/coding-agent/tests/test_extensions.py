@@ -74,7 +74,7 @@ class MyExtension(Extension):
         )
         runner = ExtensionRunner(context)
         activated = runner.activate_all(extensions)
-        assert activated >= 1
+        assert len(activated) >= 1
 
         tools = wrap_registered_tools(runner.get_all_extensions())
         if "echo" in tools:
