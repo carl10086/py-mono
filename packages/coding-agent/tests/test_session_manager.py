@@ -241,3 +241,262 @@ def test_build_session_context_empty() -> None:
     assert len(context.messages) == 0
     assert context.thinking_level == "off"
     assert context.model is None
+
+
+def test_append_compaction() -> None:
+    """测试追加压缩条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    entry = manager.append_compaction(
+        summary="Previous conversation was about setting up a project.",
+        first_kept_entry_id="abc123",
+        tokens_before=5000,
+        details={"reason": "context_limit"},
+    )
+
+    assert entry.id is not None
+    assert entry.type == "compaction"
+    assert entry.summary == "Previous conversation was about setting up a project."
+    assert entry.first_kept_entry_id == "abc123"
+    assert entry.tokens_before == 5000
+    assert entry.details == {"reason": "context_limit"}
+
+
+def test_append_branch_summary() -> None:
+    """测试追加分支摘要条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    entry = manager.append_branch_summary(
+        from_id="branch-point-123",
+        summary="Earlier we discussed Python best practices.",
+    )
+
+    assert entry.id is not None
+    assert entry.type == "branch_summary"
+    assert entry.from_id == "branch-point-123"
+    assert entry.summary == "Earlier we discussed Python best practices."
+
+
+def test_append_custom_entry() -> None:
+    """测试追加自定义条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    entry = manager.append_custom_entry(
+        custom_type="my_extension",
+        data={"key": "value"},
+    )
+
+    assert entry.id is not None
+    assert entry.type == "custom"
+    assert entry.custom_type == "my_extension"
+    assert entry.data == {"key": "value"}
+
+
+def test_append_custom_message() -> None:
+    """测试追加自定义消息条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    entry = manager.append_custom_message(
+        custom_type="notification",
+        content="Build completed successfully",
+        display=True,
+    )
+
+    assert entry.id is not None
+    assert entry.type == "custom_message"
+    assert entry.custom_type == "notification"
+    assert entry.content == "Build completed successfully"
+    assert entry.display is True
+
+
+def test_append_session_info() -> None:
+    """测试追加会话信息条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    entry = manager.append_session_info(name="My Session")
+
+    assert entry.id is not None
+    assert entry.type == "session_info"
+    assert entry.name == "My Session"
+
+    name = manager.get_session_name()
+    assert name == "My Session"
+
+
+def test_append_label_change() -> None:
+    """测试追加标签变更条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg = {"role": "user", "content": "Hello"}
+    msg_entry = manager.append_message(msg)
+
+    label_entry = manager.append_label_change(target_id=msg_entry.id, label="important")
+
+    assert label_entry.id is not None
+    assert label_entry.type == "label"
+    assert label_entry.target_id == msg_entry.id
+    assert label_entry.label == "important"
+
+
+def test_branch_and_reset_leaf() -> None:
+    """测试分支导航和重置叶子"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg1 = manager.append_message({"role": "user", "content": "Message 1"})
+    msg2 = manager.append_message({"role": "assistant", "content": "Response 2"})
+    msg3 = manager.append_message({"role": "user", "content": "Message 3"})
+
+    assert manager.get_leaf_entry().id == msg3.id
+
+    manager.branch(msg1.id)
+    assert manager.get_leaf_entry().id == msg1.id
+
+    msg4 = manager.append_message({"role": "user", "content": "Branch message"})
+    assert msg4.parent_id == msg1.id
+
+    manager.reset_leaf()
+    assert manager.get_leaf_entry() is None
+
+    msg5 = manager.append_message({"role": "user", "content": "After reset"})
+    assert msg5.parent_id is None
+
+
+def test_branch_with_summary() -> None:
+    """测试分支并生成摘要"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg1 = manager.append_message({"role": "user", "content": "Original message"})
+    manager.append_message({"role": "assistant", "content": "Original response"})
+
+    summary_entry = manager.branch_with_summary(
+        branch_from_id=msg1.id,
+        summary="We discussed the initial topic.",
+    )
+
+    assert summary_entry.type == "branch_summary"
+    assert summary_entry.from_id == msg1.id
+    assert summary_entry.summary == "We discussed the initial topic."
+
+
+def test_get_tree() -> None:
+    """测试获取会话树结构"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg1 = manager.append_message({"role": "user", "content": "Message 1"})
+    manager.append_message({"role": "assistant", "content": "Response 1"})
+
+    manager.branch(msg1.id)
+    manager.append_message({"role": "user", "content": "Branch message"})
+
+    tree = manager.get_tree()
+    assert len(tree) >= 1
+
+    root = tree[0]
+    assert root.entry.type == "message"
+    assert len(root.children) >= 1
+
+
+def test_get_children() -> None:
+    """测试获取直接子节点"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg1 = manager.append_message({"role": "user", "content": "Message 1"})
+    child1 = manager.append_message({"role": "assistant", "content": "Child 1"})
+    manager.append_message({"role": "user", "content": "Child 2"})
+
+    children = manager.get_children(msg1.id)
+    assert len(children) == 1
+    assert children[0].id == child1.id
+
+
+def test_get_leaf_entry() -> None:
+    """测试获取叶子条目"""
+    manager = SessionManager.in_memory("/test/project")
+
+    assert manager.get_leaf_entry() is None
+
+    msg1 = manager.append_message({"role": "user", "content": "Hello"})
+    assert manager.get_leaf_entry().id == msg1.id
+
+    msg2 = manager.append_message({"role": "assistant", "content": "Hi"})
+    assert manager.get_leaf_entry().id == msg2.id
+
+
+def test_fork_from() -> None:
+    """测试从源会话分叉"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        source_manager = SessionManager.create("/source/project", tmpdir)
+        source_manager.append_message({"role": "user", "content": "Hello from source"})
+        source_manager.append_message({"role": "assistant", "content": "Hi there!"})
+        source_file = source_manager.session_file
+        assert source_file is not None
+
+        forked_manager = SessionManager.fork_from(source_file, "/target/project")
+
+        assert forked_manager.cwd == "/target/project"
+        assert len(forked_manager._file_entries) >= 2
+
+        entries = forked_manager.get_entries()
+        assert len(entries) == 2
+
+
+def test_list_sessions() -> None:
+    """测试列出指定目录的会话"""
+    import asyncio
+
+    async def run_test():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager1 = SessionManager.create("/test/project", tmpdir)
+            manager1.append_message({"role": "user", "content": "Session 1"})
+            manager1.append_message({"role": "assistant", "content": "Response 1"})
+
+            manager2 = SessionManager.create("/test/project", tmpdir)
+            manager2.append_message({"role": "user", "content": "Session 2"})
+            manager2.append_message({"role": "assistant", "content": "Response 2"})
+
+            sessions = await SessionManager.list("/test/project", session_dir=tmpdir)
+            assert len(sessions) == 2
+
+    asyncio.run(run_test())
+
+
+def test_list_all_sessions() -> None:
+    """测试列出所有会话"""
+    import asyncio
+
+    async def run_test():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = SessionManager.create("/test/project", tmpdir)
+            manager.append_message({"role": "user", "content": "Hello"})
+            manager.append_message({"role": "assistant", "content": "Hi"})
+
+            sessions = await SessionManager.list_all()
+            assert len(sessions) >= 1
+
+    asyncio.run(run_test())
+
+
+def test_switch_session() -> None:
+    """测试 AgentSession.switch_session - Agent 状态恢复"""
+    import asyncio
+
+    async def run_test():
+        from coding_agent.agent_session import AgentSession, AgentSessionConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sm = SessionManager.create("/test/project", tmpdir)
+            sm.append_message({"role": "user", "content": "Hello"})
+            sm.append_message({"role": "assistant", "content": "Hi there!"})
+            session_file = sm.session_file
+
+            config = AgentSessionConfig(cwd="/test/project", session_manager=sm)
+            session = AgentSession(config)
+
+            assert len(session.build_context()) == 2
+
+            await session.switch_session(session_file)
+
+            assert len(session.build_context()) == 2
+            assert len(session.agent.state.messages) == 2
+
+    asyncio.run(run_test())
