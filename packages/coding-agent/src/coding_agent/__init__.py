@@ -8,6 +8,9 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
+# Phase 2: EventBus
+from coding_agent.event_bus import EventBus, EventBusController, create_event_bus
+
 # Phase 3: AgentSession 核心
 from coding_agent.agent_session import AgentSession, AgentSessionConfig, PromptOptions
 from coding_agent.bash_executor import BashResult, execute_bash
@@ -154,6 +157,10 @@ from coding_agent.auth_storage import (
 
 __all__ = [
     "__version__",
+    # EventBus
+    "EventBus",
+    "EventBusController",
+    "create_event_bus",
     # AgentSession
     "AgentSession",
     "AgentSessionConfig",
