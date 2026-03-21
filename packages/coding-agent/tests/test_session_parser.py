@@ -53,7 +53,7 @@ def test_validation() -> None:
 def test_migration() -> None:
     content = """
 {"type": "session", "version": 1, "id": "v1-session", "timestamp": "2024-01-01T00:00:00Z", "cwd": "/test"}
-{"type": "message", "timestamp": "2024-01-01T00:00:01Z", "message": {"role": "user", "content": "Hello", "timestamp": 1000}}
+{"type": "message", "id": "msg001", "parent_id": null, "timestamp": "2024-01-01T00:00:01Z", "message": {"role": "user", "content": "Hello", "timestamp": 1000}}
 """
 
     entries = parse_session_entries(content)

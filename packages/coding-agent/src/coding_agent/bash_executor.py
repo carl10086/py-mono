@@ -5,17 +5,13 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from coding_agent.tools.bash import create_bash_tool
 from coding_agent.tools.truncate import truncate_tail, DEFAULT_MAX_BYTES
-
-
-# ============================================================================
-# 类型定义
-# ============================================================================
 
 
 @dataclass
@@ -37,11 +33,6 @@ class BashResult:
     full_output_path: str | None = None
 
 
-# ============================================================================
-# 执行函数
-# ============================================================================
-
-
 def execute_bash(
     command: str,
     on_chunk: Callable[[str], None] | None = None,
@@ -49,9 +40,6 @@ def execute_bash(
     cwd: str | None = None,
 ) -> BashResult:
     """执行 bash 命令
-
-    使用与 create_bash_tool() 相同的本地 BashOperations 后端，
-    确保交互式用户 bash 和工具调用的 bash 共享相同的进程派生行为。
 
     Args:
         command: 要执行的 bash 命令
@@ -64,8 +52,8 @@ def execute_bash(
     """
     cwd = cwd or str(Path.cwd())
 
-    # 使用工具执行
-    bash_tool = create_bash_tool(cwd)
+    if not os.path.exists(cwd):
+        raise ValueError(f"工作目录不存在: {cwd}")
 
     output_chunks: list[str] = []
     output_bytes = 0
@@ -77,56 +65,72 @@ def execute_bash(
         output_chunks.append(chunk)
         output_bytes += len(chunk)
 
-        # 保持滚动缓冲区
         while output_bytes > max_output_bytes and len(output_chunks) > 1:
             removed = output_chunks.pop(0)
             output_bytes -= len(removed)
 
-        # 流式回调
         if on_chunk:
             on_chunk(chunk)
 
-    # 执行命令
+    cancelled = False
+    shell = os.environ.get("SHELL", "/bin/bash")
+    full_command = [shell, "-c", command]
+    process: subprocess.Popen[bytes] | None = None
+
     try:
-        # 通过工具执行
-        result = bash_tool["execute"](command)
-
-        # 处理输出
-        output = result.get("output", "")
-        if output:
-            collect_chunk(output)
-
-        # 截断处理
-        full_output = "".join(output_chunks)
-        truncation = truncate_tail(full_output)
-
-        # 检查是否被取消
-        cancelled = bool(signal and hasattr(signal, "aborted") and signal.aborted)
-
-        return BashResult(
-            output=truncation.content if truncation.truncated else full_output,
-            exit_code=None if cancelled else result.get("exitCode"),
-            cancelled=cancelled,
-            truncated=truncation.truncated,
+        process = subprocess.Popen(
+            full_command,
+            cwd=cwd,
+            shell=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=dict(os.environ),
+            start_new_session=True,
         )
 
+        if process.stdout is None:
+            raise RuntimeError("Failed to open stdout pipe")
+        while True:
+            data: bytes = process.stdout.read(4096)
+            if not data:
+                break
+            chunk: str = data.decode("utf-8", errors="replace")
+            collect_chunk(chunk)
+
+            if signal is not None and hasattr(signal, "aborted") and signal.aborted:
+                cancelled = True
+                break
+
+        process.wait()
+        exit_code = process.returncode
+
+        if cancelled:
+            try:
+                os.killpg(os.getpgid(process.pid), 15)
+                process.wait(timeout=1)
+            except Exception:
+                pass
+            exit_code = None
+
     except Exception:
-        # 检查是否是被取消
-        if signal and hasattr(signal, "aborted") and signal.aborted:
-            full_output = "".join(output_chunks)
-            truncation = truncate_tail(full_output)
-            return BashResult(
-                output=truncation.content if truncation.truncated else full_output,
-                exit_code=None,
-                cancelled=True,
-                truncated=truncation.truncated,
-            )
+        if process is not None and process.poll() is None:
+            try:
+                os.killpg(os.getpgid(process.pid), 15)
+                process.wait(timeout=1)
+            except Exception:
+                pass
         raise
 
+    full_output = "".join(output_chunks)
+    truncation = truncate_tail(full_output)
 
-# ============================================================================
-# 导出
-# ============================================================================
+    return BashResult(
+        output=truncation.content if truncation.truncated else full_output,
+        exit_code=exit_code,
+        cancelled=cancelled,
+        truncated=truncation.truncated,
+    )
+
 
 __all__ = [
     "BashResult",

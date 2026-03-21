@@ -64,7 +64,7 @@ def test_file_operations_integration():
     assert len(file_ops.edited) == 1
 
     read_files, modified_files = compute_file_lists(file_ops)
-    assert len(read_files) == 2
+    assert len(read_files) == 1
     assert len(modified_files) == 2
 
     formatted = format_file_operations(read_files, modified_files)

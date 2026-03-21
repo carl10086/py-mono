@@ -208,3 +208,36 @@ def test_reload_session_preserves_messages() -> None:
         assert reloaded_msg2["content"] == "Hi there"
         assert reloaded_msg3["role"] == "user"
         assert reloaded_msg3["content"] == "How are you?"
+
+
+def test_build_session_context() -> None:
+    """测试 build_session_context 构建 LLM 上下文"""
+    manager = SessionManager.in_memory("/test/project")
+
+    msg1 = {"role": "user", "content": [{"type": "text", "text": "Hello"}]}
+    manager.append_message(msg1)
+
+    msg2 = {"role": "assistant", "content": [{"type": "text", "text": "Hi there"}]}
+    manager.append_message(msg2)
+
+    manager.append_thinking_level_change("high")
+
+    msg3 = {"role": "user", "content": [{"type": "text", "text": "How are you?"}]}
+    manager.append_message(msg3)
+
+    context = manager.build_session_context()
+
+    assert len(context.messages) == 3
+    assert context.thinking_level == "high"
+    assert context.model is None
+
+
+def test_build_session_context_empty() -> None:
+    """测试 build_session_context 空会话"""
+    manager = SessionManager.in_memory("/test/project")
+
+    context = manager.build_session_context()
+
+    assert len(context.messages) == 0
+    assert context.thinking_level == "off"
+    assert context.model is None

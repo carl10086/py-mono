@@ -16,33 +16,32 @@
 | append_message | ✅ | ✅ | 完整 |
 | append_thinking_level_change | ✅ | ✅ | 完整 |
 | append_model_change | ✅ | ✅ | 完整 |
-| append_compaction | ✅ | ❌ | **缺失** |
-| append_branch_summary | ✅ | ❌ | **缺失** |
-| append_custom_entry | ✅ | ❌ | **缺失** |
-| append_custom_message_entry | ✅ | ❌ | **缺失** |
-| append_session_info | ✅ | ❌ | **缺失** |
-| append_label_change | ✅ | ❌ | **缺失** |
+| append_compaction | ✅ | ✅ | 完整 |
+| append_branch_summary | ✅ | ✅ | 完整 |
+| append_custom_entry | ✅ | ✅ | 完整 |
+| append_custom_message_entry | ✅ | ✅ | 完整 |
+| append_session_info | ✅ | ✅ | 完整 |
+| append_label_change | ✅ | ✅ | 完整 |
 | **树遍历** |||
 | get_branch | ✅ | ✅ | 完整 |
 | get_entries | ✅ | ✅ | 完整 |
 | get_leaf_id | ✅ | ✅ | 完整 |
 | get_entry | ✅ | ✅ | 完整 |
-| get_tree | ✅ | ❌ | **缺失** |
-| get_children | ✅ | ❌ | **缺失** |
-| get_leaf_entry | ✅ | ❌ | **缺失** |
+| get_tree | ✅ | ✅ | 完整 |
+| get_children | ✅ | ✅ | 完整 |
+| get_leaf_entry | ✅ | ✅ | 完整 |
 | **分支管理** |||
-| branch | ✅ | ❌ | **缺失** |
-| reset_leaf | ✅ | ❌ | **缺失** |
-| branch_with_summary | ✅ | ❌ | **缺失** |
-| create_branched_session | ✅ | ❌ | **缺失** |
-| fork_from | ✅ | ❌ | **缺失** |
+| branch | ✅ | ✅ | 完整 |
+| reset_leaf | ✅ | ✅ | 完整 |
+| branch_with_summary | ✅ | ✅ | 完整 |
+| fork_from | ✅ | ✅ | 完整 |
 | **会话管理** |||
-| continue_recent | ✅ | ❌ | **缺失** |
+| continue_recent | ✅ | ✅ | 完整 |
 | list | ✅ | ❌ | **缺失** |
 | list_all | ✅ | ❌ | **缺失** |
-| build_session_context | ✅ | ❌ | **缺失** |
+| build_session_context | ✅ | ✅ | 完整 |
 | **其他** |||
-| get_session_name | ✅ | ❌ | **缺失** |
+| get_session_name | ✅ | ✅ | 完整 |
 | 版本迁移 | ✅ | ✅ | 完整 |
 
 ---

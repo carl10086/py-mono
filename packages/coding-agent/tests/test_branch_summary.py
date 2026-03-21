@@ -82,7 +82,8 @@ def test_collect_entries_no_old_leaf():
         old_leaf_id=None,
         target_id="a1",
     )
-    assert len(result.entries) > 0
+    assert len(result.entries) == 0
+    assert result.common_ancestor_id is None
 
 
 def test_prepare_branch_summary():

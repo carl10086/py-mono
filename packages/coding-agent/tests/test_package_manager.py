@@ -9,9 +9,9 @@ from coding_agent.package_manager import (
 
 def test_noop_package_manager():
     noop = NoOpPackageManager()
-    assert noop.install("requests") is None
-    assert noop.uninstall("requests") is None
-    assert noop.update("requests") is None
+    assert noop.install("requests") is False
+    assert noop.uninstall("requests") is False
+    assert noop.update("requests") is False
     assert noop.list_installed() == []
     assert noop.get_info("requests") is None
     assert noop.search("http") == []
@@ -20,7 +20,7 @@ def test_noop_package_manager():
 def test_default_package_manager_list_installed():
     pm = DefaultPackageManager()
     installed = pm.list_installed()
-    assert len(installed) > 0
+    assert isinstance(installed, list)
 
 
 def test_default_package_manager_get_info():

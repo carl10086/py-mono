@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from coding_agent.compaction.utils import (
     FileOperations,
@@ -176,8 +176,8 @@ def prepare_branch_summary(
                     if isinstance(content, str):
                         total_tokens += estimate_tokens(content)
                     elif isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and "text" in block:
+                        for block in cast(list[dict[str, Any]], content):
+                            if "text" in block:
                                 total_tokens += estimate_tokens(block["text"])
 
     return BranchPreparation(

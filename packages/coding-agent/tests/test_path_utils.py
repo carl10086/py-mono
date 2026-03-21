@@ -53,15 +53,12 @@ def test_validate_path() -> None:
         result = validate_path(tmp_path, cwd, require_exists=True)
         assert result == tmp_path
 
-        with tempfile.NamedTemporaryFile(delete=False) as nonexist:
-            pass
+        nonexistent_path = os.path.join(tmp_dir, "nonexistent_file_12345.txt")
         try:
-            validate_path(nonexist.name, cwd, require_exists=True)
+            validate_path(nonexistent_path, cwd, require_exists=True)
             assert False, "should raise FileNotFoundError"
         except FileNotFoundError:
             pass
-        finally:
-            os.unlink(nonexist.name)
 
         allowed_roots = [tmp_dir, cwd]
         result = validate_path(tmp_path, cwd, allowed_roots=allowed_roots)
